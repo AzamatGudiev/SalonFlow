@@ -1,12 +1,13 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, UserPlus, Edit, Trash2, Wrench, Building, Loader2 } from "lucide-react";
+import { ArrowLeft, UserPlus, Edit, Trash2, Wrench, Building, Loader2, Users } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -64,12 +65,12 @@ export default function StaffPage() {
   const [ownerSalonId, setOwnerSalonId] = useState<string | null>(null);
 
   const [name, setName] = useState('');
-  const [staffRole, setStaffRole] = useState(''); 
+  const [staffRole, setStaffRoleState] = useState(''); 
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
-  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null;
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
     if (!authIsLoading && !isLoggedIn) {
@@ -94,24 +95,23 @@ export default function StaffPage() {
         const key = getOwnerSalonIdKey();
         currentOwnerSalonId = key ? localStorage.getItem(key) : null;
         setOwnerSalonId(currentOwnerSalonId);
-         if(!currentOwnerSalonId) {
+         if(!currentOwnerSalonId && !authIsLoading) { // only toast if auth is done loading and still no salon id
             toast({ title: "Salon Not Found", description: "Please set up your salon in 'My Salon' before adding staff.", variant: "default", duration: 7000 });
         }
       }
-      // For staff role, we might need a different way to get their salonId if it's not directly on the user object.
-      // For now, staff can only view, not manage staff (unless this logic is expanded)
-
+      
       try {
-        const [fetchedStaff, fetchedServices] = await Promise.all([
+        const [fetchedStaff, fetchedServicesResult] = await Promise.all([
           currentOwnerSalonId ? getStaffMembers({ salonId: currentOwnerSalonId }) : Promise.resolve([] as StaffMember[]),
           getServices()
         ]);
         
         setStaffList(fetchedStaff.map(staff => ({...staff, initials: generateInitials(staff.name), providedServices: staff.providedServices || [] })));
-        setAvailableServices(fetchedServices);
-      } catch (error) {
+        setAvailableServices(fetchedServicesResult);
+
+      } catch (error: any) {
         console.error("Error fetching initial data for staff page:", error);
-        toast({ title: "Error fetching data", description: "Could not load staff or services.", variant: "destructive" });
+        toast({ title: "Error fetching data", description: error.message || "Could not load staff or services.", variant: "destructive" });
       } finally {
         setIsLoadingData(false);
       }
@@ -120,10 +120,10 @@ export default function StaffPage() {
       fetchInitialData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, toast]);
+  }, [user, role, toast, authIsLoading]);
 
   const resetForm = () => {
-    setName(''); setStaffRole(''); setEmail(''); setAvatarUrl(''); setSelectedServices([]);
+    setName(''); setStaffRoleState(''); setEmail(''); setAvatarUrl(''); setSelectedServices([]);
     setCurrentStaffToEdit(null);
   };
 
@@ -132,13 +132,17 @@ export default function StaffPage() {
       toast({ title: "Cannot Add Staff", description: "Please create or select your salon in 'My Salon' first.", variant: "destructive" });
       return;
     }
+     if (availableServices.length === 0) {
+      toast({ title: "No Services Defined", description: "Please add services in 'Manage Services' before assigning them to staff.", variant: "default" });
+      // Optionally, still open the dialog if they want to add staff without services yet
+    }
     resetForm();
     setIsAddEditDialogOpen(true);
   };
 
   const handleOpenEditDialog = (staff: StaffMember) => {
     setCurrentStaffToEdit(staff);
-    setName(staff.name); setStaffRole(staff.role); setEmail(staff.email);
+    setName(staff.name); setStaffRoleState(staff.role); setEmail(staff.email);
     setAvatarUrl(staff.avatar || ''); setSelectedServices(staff.providedServices || []);
     setIsAddEditDialogOpen(true);
   };
@@ -179,10 +183,11 @@ export default function StaffPage() {
 
     if (result.success && result.staffMember) {
       toast({ title: currentStaffToEdit ? "Staff Updated" : "Staff Added", description: `"${result.staffMember.name}" has been saved.` });
+      const updatedStaffMember = {...result.staffMember, providedServices: result.staffMember.providedServices || []};
       if (currentStaffToEdit) {
-        setStaffList(prevStaff => prevStaff.map(s => s.id === result.staffMember!.id ? {...result.staffMember, providedServices: result.staffMember!.providedServices || []} : s));
+        setStaffList(prevStaff => prevStaff.map(s => s.id === updatedStaffMember.id ? updatedStaffMember : s));
       } else {
-        setStaffList(prevStaff => [{...result.staffMember!, providedServices: result.staffMember!.providedServices || []}, ...prevStaff]);
+        setStaffList(prevStaff => [updatedStaffMember, ...prevStaff]);
       }
       setIsAddEditDialogOpen(false);
       resetForm();
@@ -273,6 +278,9 @@ export default function StaffPage() {
                         </div>
                       </div>
                     )}
+                     {(!staff.providedServices || staff.providedServices.length === 0) && (
+                        <p className="text-xs text-muted-foreground italic">No specific services assigned.</p>
+                    )}
                   </CardContent>
                   {role === 'owner' && ownerSalonId === staff.salonId && (
                   <CardFooter className="p-4 pt-0 flex justify-end gap-2 border-t mt-auto">
@@ -288,11 +296,20 @@ export default function StaffPage() {
               ))}
             </div>
           ) : (
-             <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-4">
-              <UserPlus className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground font-semibold">No staff members added yet.</p>
-              {role === 'owner' && ownerSalonId && <p className="text-sm text-muted-foreground mt-2">Click &quot;Add New Staff&quot; to get started.</p>}
-              {role === 'owner' && !ownerSalonId && !isLoadingData && <p className="text-sm text-muted-foreground mt-2">Please complete your salon setup in "My Salon".</p>}
+             <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-6 text-center">
+              <Users className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-xl font-semibold text-foreground">No staff members added yet.</p>
+              {role === 'owner' && ownerSalonId && 
+                <>
+                  <p className="text-sm text-muted-foreground mt-2">Click "Add New Staff" to get started.</p>
+                  {availableServices.length === 0 && <p className="text-xs text-muted-foreground mt-1">Consider adding some services in 'Manage Services' first!</p>}
+                </>
+              }
+              {role === 'owner' && !ownerSalonId && !isLoadingData && 
+                <Button asChild className="mt-4">
+                   <Link href="/dashboard/my-salon">Set Up My Salon</Link>
+                </Button>
+              }
             </div>
           )}
         </CardContent>
@@ -309,23 +326,23 @@ export default function StaffPage() {
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2"> <Label htmlFor="staff-name">Name</Label> <Input id="staff-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., John Doe" required aria-label="Staff Name"/> </div>
-              <div className="space-y-2"> <Label htmlFor="staff-role">Role</Label> <Input id="staff-role" value={staffRole} onChange={(e) => setStaffRole(e.target.value)} placeholder="e.g., Stylist, Barber" required aria-label="Staff Role"/> </div>
+              <div className="space-y-2"> <Label htmlFor="staff-role">Role</Label> <Input id="staff-role" value={staffRole} onChange={(e) => setStaffRoleState(e.target.value)} placeholder="e.g., Stylist, Barber" required aria-label="Staff Role"/> </div>
               <div className="space-y-2"> <Label htmlFor="staff-email">Email</Label> <Input id="staff-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g., john.doe@example.com" required aria-label="Staff Email"/> </div>
               <div className="space-y-2"> <Label htmlFor="staff-avatar">Avatar URL (Optional)</Label> <Input id="staff-avatar" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://placehold.co/100x100.png" aria-label="Staff Avatar URL"/> <p className="text-xs text-muted-foreground">If not provided, a placeholder will be used based on initials.</p> </div>
               <div className="space-y-2"> <Label>Provided Services</Label>
                 <ScrollArea className="h-32 w-full rounded-md border p-2">
                   {availableServices.length > 0 ? availableServices.map(service => (
                     <div key={service.id} className="flex items-center space-x-2 mb-1.5">
-                      <Checkbox id={`service-${service.id}`} checked={selectedServices.includes(service.name)} onCheckedChange={(checked) => handleServiceSelectionChange(service.name, !!checked)} />
+                      <Checkbox id={`service-${service.id}`} checked={selectedServices.includes(service.name)} onCheckedChange={(checked) => handleServiceSelectionChange(service.name, !!checked)} aria-label={`Select service ${service.name}`} />
                       <Label htmlFor={`service-${service.id}`} className="text-sm font-normal cursor-pointer"> {service.name} ({service.category}) </Label>
                     </div>
-                  )) : <p className="text-xs text-muted-foreground">No services available. Add services first in the 'Manage Services' section.</p>}
+                  )) : <p className="text-xs text-muted-foreground p-2">No services available. Add services first in the <Link href="/dashboard/services" className="text-primary underline">Manage Services</Link> section.</p>}
                 </ScrollArea>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting || (availableServices.length === 0 && !currentStaffToEdit?.providedServices?.length )}>
+              <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
                 {isSubmitting ? (currentStaffToEdit ? 'Saving...' : 'Adding...') : 'Save Staff Member'}
               </Button>
@@ -349,3 +366,4 @@ export default function StaffPage() {
     </div>
   );
 }
+

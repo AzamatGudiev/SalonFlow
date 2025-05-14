@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlusCircle, CalendarDays, Edit2, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, PlusCircle, CalendarDays, Edit2, Trash2, Loader2, Inbox } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, type FormEvent, useMemo, useCallback } from "react";
@@ -44,6 +44,7 @@ import { getStaffMembers } from '@/app/actions/staffActions';
 import { getServices } from '@/app/actions/serviceActions';
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
+import { format, parseISO } from "date-fns";
 
 const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
 
@@ -79,7 +80,7 @@ export default function BookingsPage() {
       return;
     }
     if (!authIsLoading && isLoggedIn && role !== 'owner' && role !== 'staff') {
-       router.push('/dashboard'); // Or appropriate page for non-owner/staff
+       router.push('/dashboard'); 
       return;
     }
   }, [authIsLoading, isLoggedIn, role, router]);
@@ -95,22 +96,25 @@ export default function BookingsPage() {
       if (role === 'owner' && user) {
         const key = getOwnerSalonIdKey();
         currentOwnerSalonId = key ? localStorage.getItem(key) : null;
+        if (!currentOwnerSalonId) {
+            toast({ title: "Salon Not Configured", description: "Please set up your salon in 'My Salon' to manage bookings.", variant: "default" });
+        }
         setOwnerSalonId(currentOwnerSalonId);
       }
-      // TODO: For staff role, determine their salonId if not directly available.
+      
 
       try {
         const [fetchedBookings, fetchedStaff, fetchedServices] = await Promise.all([
-          getBookings({ salonId: currentOwnerSalonId || undefined }), // Fetch bookings for owner's salon
-          getStaffMembers({ salonId: currentOwnerSalonId || undefined }), // Fetch staff for owner's salon
-          getServices() // Fetch all services
+          getBookings({ salonId: currentOwnerSalonId || undefined }), 
+          getStaffMembers({ salonId: currentOwnerSalonId || undefined }), 
+          getServices() 
         ]);
         setBookings(fetchedBookings);
         setAllStaff(fetchedStaff.map(s => ({ ...s, providedServices: s.providedServices || [] })));
         setAvailableServices(fetchedServices);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching initial data:", error);
-        toast({ title: "Error fetching data", description: "Could not load bookings, staff, or services.", variant: "destructive" });
+        toast({ title: "Error fetching data", description: error.message || "Could not load bookings, staff, or services.", variant: "destructive" });
       } finally {
         setIsLoadingData(false);
       }
@@ -118,7 +122,8 @@ export default function BookingsPage() {
      if (user && (role === 'owner' || role === 'staff')) {
       fetchInitialData();
     }
-  }, [user, role, toast, getOwnerSalonIdKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, role, toast]);
 
   const filteredStaffForSelectedService = useMemo(() => {
     if (!selectedServiceId) return allStaff;
@@ -134,7 +139,17 @@ export default function BookingsPage() {
     setCurrentBookingToEdit(null);
   };
 
-  const handleOpenAddDialog = () => { resetForm(); setIsAddEditDialogOpen(true); };
+  const handleOpenAddDialog = () => { 
+    if (!ownerSalonId && role === 'owner') {
+      toast({ title: "Salon ID Missing", description: "Your salon is not configured. Please set it up in 'My Salon'.", variant: "destructive" });
+      return;
+    }
+    if (availableServices.length === 0) {
+        toast({ title: "No Services Available", description: "Please add services in 'Manage Services' before creating bookings.", variant: "default" });
+        return;
+    }
+    resetForm(); setIsAddEditDialogOpen(true); 
+  };
 
   const handleOpenEditDialog = (booking: Booking) => {
     setCurrentBookingToEdit(booking);
@@ -159,15 +174,17 @@ export default function BookingsPage() {
     
     const staffMember = allStaff.find(s => s.id === selectedStaffId);
     const serviceDetails = availableServices.find(s => s.id === selectedServiceId);
+    const salonName = user?.firstName ? `${user.firstName}'s Salon` : 'Your Salon'; // Placeholder, ideally fetch from salon details
 
     const bookingDataInput = { 
-        salonId: ownerSalonId!, // Asserting ownerSalonId as it's checked
+        salonId: ownerSalonId!, 
+        salonName: salonName, // This should be dynamically fetched or from user's salon details
         customerName, 
         customerEmail,
         service: serviceDetails?.name || 'Unknown Service', 
         date, 
         time, 
-        staff: staffMember?.name || (selectedStaffId === '' ? undefined : 'Any Available'), // Handle 'Any Available' if no specific staff
+        staff: staffMember?.name || (selectedStaffId === '' || selectedStaffId === 'any' ? undefined : 'Any Available'), 
         notes: notes || undefined
     };
 
@@ -194,7 +211,7 @@ export default function BookingsPage() {
       if (currentBookingToEdit) {
         setBookings(prev => prev.map(b => b.id === result.booking!.id ? result.booking! : b));
       } else {
-        setBookings(prev => [result.booking!, ...prev]); 
+        setBookings(prev => [result.booking!, ...prev.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.time.localeCompare(a.time))]); 
       }
       setIsAddEditDialogOpen(false);
       resetForm();
@@ -237,7 +254,7 @@ export default function BookingsPage() {
       <Card className="shadow-lg">
         <CardHeader className="flex flex-row items-center justify-between">
           <div> <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary"/>Upcoming Bookings</CardTitle> <CardDescription>A list of scheduled appointments for your salon.</CardDescription> </div>
-          <Button onClick={handleOpenAddDialog} disabled={isLoadingData || isSubmitting}> <PlusCircle className="mr-2 h-4 w-4" /> Add New Booking </Button>
+          <Button onClick={handleOpenAddDialog} disabled={isLoadingData || isSubmitting || !ownerSalonId || availableServices.length === 0}> <PlusCircle className="mr-2 h-4 w-4" /> Add New Booking </Button>
         </CardHeader>
         <CardContent>
           {bookings.length > 0 ? (
@@ -250,7 +267,7 @@ export default function BookingsPage() {
                     <TableCell className="font-medium">{booking.customerName}</TableCell>
                     <TableCell>{booking.customerEmail}</TableCell>
                     <TableCell>{booking.service}</TableCell>
-                    <TableCell>{new Date(booking.date + 'T00:00:00').toLocaleDateString()}</TableCell>
+                    <TableCell>{format(parseISO(booking.date), 'PPP')}</TableCell>
                     <TableCell>{booking.time}</TableCell>
                     <TableCell>{booking.staff || 'Any'}</TableCell>
                     <TableCell className="text-right space-x-1">
@@ -262,10 +279,19 @@ export default function BookingsPage() {
               </TableBody>
             </Table>
           ) : (
-            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-4 text-center">
-              <CalendarDays className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold text-muted-foreground">No bookings yet for your salon.</p>
-              <p className="text-sm text-muted-foreground mt-2"> Click &quot;Add New Booking&quot; to schedule an appointment. </p>
+            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-6 text-center">
+              <Inbox className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-xl font-semibold text-foreground">No bookings found for your salon.</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                {ownerSalonId 
+                  ? 'Click "Add New Booking" to schedule an appointment for a customer, or customers can book through your salon page.'
+                  : "Please set up your salon in 'My Salon' to start managing bookings."}
+              </p>
+              {!ownerSalonId && (
+                <Button asChild className="mt-4">
+                  <Link href="/dashboard/my-salon">Set Up My Salon</Link>
+                </Button>
+              )}
             </div>
           )}
         </CardContent>
@@ -281,7 +307,7 @@ export default function BookingsPage() {
               <div className="space-y-1.5"> <Label htmlFor="service-select">Service</Label>
                 <Select value={selectedServiceId} onValueChange={(value) => { setSelectedServiceId(value); setSelectedStaffId(''); }}>
                   <SelectTrigger id="service-select" aria-label="Service" disabled={availableServices.length === 0}> <SelectValue placeholder={availableServices.length > 0 ? "Select a service" : "No services available"} /> </SelectTrigger>
-                  <SelectContent> {availableServices.map((service) => ( <SelectItem key={service.id} value={service.id}> {service.name} </SelectItem> ))} </SelectContent>
+                  <SelectContent> {availableServices.map((service) => ( <SelectItem key={service.id} value={service.id}> {service.name} ({service.duration} - {service.price}) </SelectItem> ))} </SelectContent>
                 </Select>
                 {availableServices.length === 0 && <p className="text-xs text-muted-foreground">Please add services in the 'Manage Services' section first.</p>}
               </div>
@@ -292,7 +318,7 @@ export default function BookingsPage() {
               <div className="space-y-1.5"> <Label htmlFor="staff-select">Staff Member (Optional)</Label>
                 <Select value={selectedStaffId} onValueChange={setSelectedStaffId} disabled={!selectedServiceId || filteredStaffForSelectedService.length === 0}>
                   <SelectTrigger id="staff-select" aria-label="Staff Member"> <SelectValue placeholder={!selectedServiceId ? "Select a service first" : (filteredStaffForSelectedService.length > 0 ? "Select available staff" : "No staff for this service")} /> </SelectTrigger>
-                  <SelectContent> <SelectItem value="">Any Available</SelectItem> {filteredStaffForSelectedService.map((staffMember) => ( <SelectItem key={staffMember.id} value={staffMember.id}> {staffMember.name} </SelectItem> ))} </SelectContent>
+                  <SelectContent> <SelectItem value="any">Any Available</SelectItem> {filteredStaffForSelectedService.map((staffMember) => ( <SelectItem key={staffMember.id} value={staffMember.id}> {staffMember.name} </SelectItem> ))} </SelectContent>
                 </Select>
                 {!selectedServiceId && <p className="text-xs text-muted-foreground">Please select a service to see available staff.</p>}
                 {selectedServiceId && filteredStaffForSelectedService.length === 0 && <p className="text-xs text-muted-foreground">No staff members are configured to provide the selected service.</p>}
@@ -325,3 +351,4 @@ export default function BookingsPage() {
     </div>
   );
 }
+

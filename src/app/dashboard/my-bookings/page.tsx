@@ -14,7 +14,7 @@ import {
   AlertDialogTitle 
 } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from "@/components/ui/table";
-import { ArrowLeft, CalendarDays, Trash2, Info, Loader2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Trash2, Info, Loader2, SearchX } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
@@ -45,25 +45,36 @@ export default function MyBookingsPage() {
       if (user?.email && role === 'customer') {
         setIsLoadingBookings(true);
         try {
-          const fetchedBookings = await getBookings({ customerEmail: user.email });
-          setBookings(fetchedBookings);
-        } catch (error) {
+          const result = await getBookings({ customerEmail: user.email });
+          if(Array.isArray(result)) { // Check if result is an array (success case)
+            setBookings(result);
+          } else if (result && 'error' in result) { // Check if it's an error object
+             toast({ title: "Error", description: result.error || "Could not fetch your bookings.", variant: "destructive" });
+             setBookings([]); // Set to empty array on error
+          } else {
+            // Handle unexpected result format
+            toast({ title: "Error", description: "An unexpected error occurred while fetching bookings.", variant: "destructive" });
+            setBookings([]);
+          }
+        } catch (error: any) {
           console.error("Error fetching customer bookings:", error);
-          toast({ title: "Error", description: "Could not fetch your bookings.", variant: "destructive" });
+          toast({ title: "Error", description: error.message || "Could not fetch your bookings.", variant: "destructive" });
+          setBookings([]);
         } finally {
           setIsLoadingBookings(false);
         }
       } else if (!user?.email && !authIsLoading && role === 'customer') {
-         // User is loaded, role is customer, but email is missing (should not happen with Firebase Auth)
         toast({ title: "Error", description: "User email not found, cannot fetch bookings.", variant: "destructive" });
         setIsLoadingBookings(false);
+        setBookings([]);
       }
     }
     
     if (!authIsLoading && isLoggedIn && role === 'customer') {
       fetchMyBookings();
     } else if (!authIsLoading && !isLoggedIn) {
-        setIsLoadingBookings(false); // Not logged in, so no bookings to load
+        setIsLoadingBookings(false); 
+        setBookings([]);
     }
   }, [user, authIsLoading, isLoggedIn, role, toast]);
   
@@ -87,14 +98,17 @@ export default function MyBookingsPage() {
 
   const isBookingInFuture = (bookingDate: string, bookingTime: string): boolean => {
     try {
-      const dateTimeString = `${bookingDate}T${bookingTime}`;
-      const bookingDateTime = parseISO(dateTimeString); // Directly parse combined string
+      // Assuming bookingDate is 'YYYY-MM-DD' and bookingTime is 'HH:MM' (24-hour)
+      const dateTimeString = `${bookingDate}T${bookingTime}:00`; // Add seconds for robust parsing
+      const bookingDateTime = parseISO(dateTimeString);
       return isFuture(bookingDateTime);
     } catch (e) {
-        console.error("Error parsing date/time for future check", e);
-        return false; // Default to not cancellable if date is invalid
+        console.error("Error parsing date/time for future check:", e, "Date:", bookingDate, "Time:", bookingTime);
+        // If parsing fails, conservatively assume it's not in the future or not cancellable by default
+        return false; 
     }
   };
+
 
   if (authIsLoading || isLoadingBookings) {
     return (
@@ -105,7 +119,6 @@ export default function MyBookingsPage() {
   }
   
   if (!isLoggedIn || role !== 'customer') {
-     // This case should ideally be caught by the useEffect redirect, but as a fallback
     return <div className="container mx-auto py-12 px-4">Redirecting...</div>;
   }
   
@@ -171,9 +184,9 @@ export default function MyBookingsPage() {
               </TableBody>
             </Table>
           ) : (
-            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-4 text-center">
-              <Info className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold text-muted-foreground">No bookings yet.</p>
+            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-6 text-center">
+              <SearchX className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-xl font-semibold text-foreground">No bookings found.</p>
               <p className="text-sm text-muted-foreground mt-2 mb-6">
                 When you book an appointment, it will appear here.
               </p>
@@ -212,3 +225,4 @@ export default function MyBookingsPage() {
     </div>
   );
 }
+

@@ -5,11 +5,11 @@ import { useState, useEffect, type FormEvent, useTransition } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, MapPin, Star, Loader2 } from "lucide-react";
+import { Search, MapPin, Star, Loader2, Inbox } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import type { Salon } from '@/lib/schemas'; // Using the Salon type from schemas
+import type { Salon } from '@/lib/schemas'; 
 import { getSalons } from '@/app/actions/salonActions';
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -31,16 +31,16 @@ export default function SalonsPage() {
             description: `No salons found matching "${query}". Try a different search.`,
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching salons:", error)
-      toast({ title: "Error", description: "Could not fetch salons.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Could not fetch salons.", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAndSetSalons(); // Initial fetch
+    fetchAndSetSalons();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
@@ -106,16 +106,16 @@ export default function SalonsPage() {
             <Card key={salon.id} className="overflow-hidden transform transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex flex-col">
               <div className="relative w-full h-56">
                 <Image 
-                  src={salon.image} 
+                  src={salon.image || `https://placehold.co/600x400.png?text=${encodeURIComponent(salon.name)}`}
                   alt={salon.name} 
                   fill
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   style={{objectFit:"cover"}}
-                  data-ai-hint={salon.aiHint}
+                  data-ai-hint={salon.aiHint || salon.name.split(' ')[0]?.toLowerCase() || 'salon'}
                 />
               </div>
               <CardHeader>
-                <CardTitle className="text-2xl font-semibold text-foreground">{salon.name}</CardTitle>
+                <CardTitle className="text-xl font-semibold text-foreground">{salon.name}</CardTitle>
                 <CardDescription className="flex items-center text-sm text-muted-foreground pt-1">
                   <MapPin className="h-4 w-4 mr-1.5" /> {salon.location}
                 </CardDescription>
@@ -145,13 +145,22 @@ export default function SalonsPage() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-10">
-            <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-xl font-semibold text-muted-foreground">No salons found.</p>
-            {searchQuery && <p className="text-sm text-muted-foreground mt-2">Try adjusting your search terms for &quot;{searchQuery}&quot; or clear the search.</p>}
-            <Button variant="link" onClick={() => { setSearchQuery(''); fetchAndSetSalons(); }} className="mt-4">Clear Search</Button>
+        <div className="text-center py-16">
+            <Inbox className="h-16 w-16 text-muted-foreground mx-auto mb-6" />
+            <h2 className="text-2xl font-semibold text-foreground mb-2">No Salons Found</h2>
+            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              {searchQuery 
+                ? `We couldn't find any salons matching "${searchQuery}". Try a different search term or broaden your criteria.`
+                : "It looks like there are no salons listed yet. Check back soon or try a search!"}
+            </p>
+            {searchQuery && (
+              <Button variant="outline" onClick={() => { setSearchQuery(''); fetchAndSetSalons(); }}>
+                Clear Search & View All
+              </Button>
+            )}
         </div>
       )}
     </div>
   );
 }
+

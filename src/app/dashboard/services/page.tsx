@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlusCircle, Edit, Trash2, Info, Loader2 } from "lucide-react";
+import { ArrowLeft, PlusCircle, Edit, Trash2, Info, Loader2, Wrench } from "lucide-react";
 import Link from "next/link";
 import {
   Table,
@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -41,12 +41,16 @@ import { ServiceSchema, type Service, type Salon } from '@/lib/schemas';
 import { getServices, addService, updateService, deleteService } from '@/app/actions/serviceActions';
 import { getSalonById } from '@/app/actions/salonActions'; 
 import { useAuth } from "@/hooks/use-auth"; 
+import { useRouter } from "next/navigation";
+
 
 const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
 
 export default function ServicesPage() {
   const { toast } = useToast();
-  const { user, role } = useAuth();
+  const { user, role, isLoading: authIsLoading, isLoggedIn } = useAuth();
+  const router = useRouter();
+
   const [services, setServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,7 +67,19 @@ export default function ServicesPage() {
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [ownerSalonId, setOwnerSalonId] = useState<string | null>(null);
 
-  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null;
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
+
+  useEffect(() => {
+    if (!authIsLoading && !isLoggedIn) {
+      router.push('/auth/login');
+      return;
+    }
+     if (!authIsLoading && isLoggedIn && role !== 'owner' && role !== 'staff') {
+       router.push('/dashboard');
+      return;
+    }
+  }, [authIsLoading, isLoggedIn, role, router]);
+
 
   useEffect(() => {
     async function fetchPageData() {
@@ -82,37 +98,36 @@ export default function ServicesPage() {
         setServices(fetchedServices);
 
         if (role === 'owner' && currentOwnerSalonId) {
-          const salon = await getSalonById(currentOwnerSalonId);
-          if (salon && salon.services) {
-            setSalonServiceCategories(salon.services);
+          const salonResult = await getSalonById(currentOwnerSalonId);
+          if (salonResult && salonResult.services) {
+            setSalonServiceCategories(salonResult.services);
           } else {
             setSalonServiceCategories([]);
-            if (!salon) {
+            if (!salonResult) {
                 toast({ title: "Salon Not Found", description: "Your salon details could not be found. Please set up your salon in 'My Salon'.", variant: "destructive", duration: 7000 });
-            } else {
-                toast({ title: "Salon Categories Not Found", description: "Please set up your service categories in 'My Salon' first.", variant: "default", duration: 7000 });
+            } else if (!salonResult.services || salonResult.services.length === 0) {
+                toast({ title: "Salon Categories Not Defined", description: "Please define service categories in 'My Salon' before adding specific services.", variant: "default", duration: 7000 });
             }
           }
-        } else if (role === 'owner' && !currentOwnerSalonId) {
+        } else if (role === 'owner' && !currentOwnerSalonId && !authIsLoading) {
           setSalonServiceCategories([]);
-          toast({ title: "No Salon Configured", description: "Please create your salon in 'My Salon' to define service categories.", variant: "default", duration: 7000 });
+          toast({ title: "No Salon Configured", description: "Please create or select your salon in 'My Salon' to define service categories and add services.", variant: "default", duration: 7000 });
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching page data (ServicesPage):", error);
-        toast({ title: "Error fetching data", description: "Could not load services or salon categories. Please try again.", variant: "destructive" });
+        toast({ title: "Error fetching data", description: error.message || "Could not load services or salon categories. Please try again.", variant: "destructive" });
       } finally {
         setIsLoading(false);
         setIsLoadingCategories(false);
       }
     }
-    if (user || !role) { // Only fetch if user is loaded or role is not yet determined (to avoid fetching if not owner)
+    if (user || !role) { 
         fetchPageData();
-    } else if (!user && !isLoading) { // If user is definitely not logged in and auth loading is done
+    } else if (!user && !authIsLoading) { 
         setIsLoading(false);
         setIsLoadingCategories(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, role, user]);
+  }, [toast, role, user, authIsLoading, getOwnerSalonIdKey]);
 
   const resetForm = () => {
     setName(''); setSelectedCategory(''); setDurationState(''); setPriceState('');
@@ -195,8 +210,8 @@ export default function ServicesPage() {
 
   const handleCloseDialog = () => { if(!isSubmitting) { setIsAddEditDialogOpen(false); resetForm(); } }
 
-  if (isLoading && !user && role !== 'owner' && role !== 'staff') { // Initial loading or user not an owner/staff
-    return <div className="container mx-auto p-6">Loading or access denied...</div>;
+  if (authIsLoading || isLoading) { 
+    return <div className="container mx-auto p-6 flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
   }
 
   return (
@@ -226,8 +241,7 @@ export default function ServicesPage() {
           )}
         </CardHeader>
         <CardContent>
-          {isLoading && services.length === 0 && <p>Loading services...</p>}
-          {!isLoading && services.length > 0 && (
+          {services.length > 0 && (
             <Table>
               <TableCaption>A list of your salon&apos;s specific services.</TableCaption>
               <TableHeader>
@@ -260,20 +274,28 @@ export default function ServicesPage() {
             </Table>
           )}
           {!isLoading && services.length === 0 && (
-            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md mt-4 text-center">
-              <Info className="h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-xl font-semibold text-muted-foreground">No specific services added yet.</p>
+            <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md mt-4 text-center p-6">
+              <Wrench className="h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-xl font-semibold text-foreground">No specific services added yet.</p>
               {role === 'owner' && !ownerSalonId && !isLoadingCategories && (
                 <p className="text-sm text-muted-foreground mt-2">Ensure your salon is set up in 'My Salon'.</p>
               )}
               {role === 'owner' && ownerSalonId && salonServiceCategories.length === 0 && !isLoadingCategories && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Define service categories in <Link href="/dashboard/my-salon" className="text-primary underline">My Salon</Link> first.
-                </p>
+                <>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Please define service categories in <Link href="/dashboard/my-salon" className="text-primary underline hover:text-primary/80">My Salon</Link> first.
+                  </p>
+                  <Button asChild className="mt-4">
+                     <Link href="/dashboard/my-salon">Go to My Salon</Link>
+                  </Button>
+                </>
               )}
               {(role === 'owner' || role === 'staff') && salonServiceCategories.length > 0 && (
-                 <p className="text-sm text-muted-foreground mt-2">Click &quot;Add New Service&quot; to get started.</p>
+                 <p className="text-sm text-muted-foreground mt-2">Click "Add New Service" to get started.</p>
                )}
+                {(role === 'owner' || role === 'staff') && !ownerSalonId && (
+                     <p className="text-sm text-muted-foreground mt-2">Salon setup is required before adding services.</p>
+                )}
             </div>
           )}
         </CardContent>
@@ -342,3 +364,4 @@ export default function ServicesPage() {
     </div>
   );
 }
+
