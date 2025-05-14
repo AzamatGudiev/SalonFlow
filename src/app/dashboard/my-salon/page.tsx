@@ -15,7 +15,7 @@ import { ArrowLeft, Save, Building } from 'lucide-react';
 import Link from 'next/link';
 import type { Salon } from '@/lib/schemas';
 import { SalonSchema } from '@/lib/schemas';
-import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions';
+import { addSalon, updateSalon, getSalons, getSalonById } from '@/app/actions/salonActions'; // Added getSalonById
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 const DEFAULT_SERVICES = [
@@ -36,6 +36,8 @@ const DEFAULT_AMENITIES = [
   "Accepts Credit Cards", "Accepts Mobile Payments", "Wheelchair Accessible", "Kid-Friendly Atmosphere", "Loyalty Program",
   "Online Booking", "Walk-ins Welcome", "Gender-Neutral Restrooms", "Background Music", "Magazines/Reading Material"
 ];
+
+const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
 
 
 export default function MySalonPage() {
@@ -58,43 +60,53 @@ export default function MySalonPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // State for checkbox selections
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedOperatingHours, setSelectedOperatingHours] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+
+  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.email}` : null;
 
   useEffect(() => {
     if (!authLoading && role !== 'owner') {
       toast({ title: "Access Denied", description: "You must be a salon owner to access this page.", variant: "destructive" });
       router.push('/dashboard');
+      return;
     }
-  }, [authLoading, role, router, toast]);
 
-  useEffect(() => {
-    if (role === 'owner') {
+    if (role === 'owner' && user) {
       setIsLoadingData(true);
-      getSalons() // In a real app, this would be getSalonByOwnerId(user.id)
-        .then(salons => {
-          // This simple logic assumes the owner has at most one salon.
-          // For a multi-salon system, this would need to be more sophisticated.
-          if (salons.length > 0) {
-            const currentSalon = salons[0]; // Assuming the first salon found is the owner's
-            setSalonDetails(currentSalon);
-            setSalonIdToUpdate(currentSalon.id);
-            setSelectedServices(currentSalon.services || []);
-            setSelectedOperatingHours(currentSalon.operatingHours || []);
-            setSelectedAmenities(currentSalon.amenities || []);
-          }
-        })
-        .catch(err => {
-          console.error("Error fetching salon details:", err);
-          toast({ title: "Error", description: "Could not fetch salon details.", variant: "destructive" });
-        })
-        .finally(() => setIsLoadingData(false));
-    } else {
+      const ownerSalonIdKey = getOwnerSalonIdKey();
+      const storedSalonId = ownerSalonIdKey ? localStorage.getItem(ownerSalonIdKey) : null;
+
+      if (storedSalonId) {
+        getSalonById(storedSalonId)
+          .then(currentSalon => {
+            if (currentSalon) {
+              setSalonDetails(currentSalon);
+              setSalonIdToUpdate(currentSalon.id);
+              setSelectedServices(currentSalon.services || []);
+              setSelectedOperatingHours(currentSalon.operatingHours || []);
+              setSelectedAmenities(currentSalon.amenities || []);
+            } else {
+              // Salon ID was stored but not found in DB, maybe deleted. Clear it.
+              localStorage.removeItem(ownerSalonIdKey!);
+            }
+          })
+          .catch(err => {
+            console.error("Error fetching salon details by stored ID:", err);
+            toast({ title: "Error", description: "Could not fetch your salon details.", variant: "destructive" });
+          })
+          .finally(() => setIsLoadingData(false));
+      } else {
+        // No stored salon ID, maybe first time. We could also try to find one by owner if we had ownerId on salon.
+        // For now, we assume a new salon creation or no salon associated yet.
         setIsLoadingData(false);
+      }
+    } else if (!user && !authLoading) { // If user becomes null while on page
+        router.push('/auth/login');
     }
-  }, [role, toast, user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, role, user, router, toast]);
 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -116,6 +128,10 @@ export default function MySalonPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!user) {
+        toast({ title: "Error", description: "User not found. Please log in again.", variant: "destructive" });
+        return;
+    }
     setIsSubmitting(true);
 
     const finalSalonData = {
@@ -125,7 +141,7 @@ export default function MySalonPage() {
       services: selectedServices,
       operatingHours: selectedOperatingHours,
       amenities: selectedAmenities,
-      rating: salonDetails.rating || 0,
+      rating: salonDetails.rating || 0, // Or handle rating differently
       image: salonDetails.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(salonDetails.name || 'Salon')}`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
@@ -158,6 +174,13 @@ export default function MySalonPage() {
       setSelectedServices(result.salon.services || []);
       setSelectedOperatingHours(result.salon.operatingHours || []);
       setSelectedAmenities(result.salon.amenities || []);
+      
+      // Store the salon ID in localStorage for the current owner
+      const ownerSalonIdKey = getOwnerSalonIdKey();
+      if (ownerSalonIdKey) {
+          localStorage.setItem(ownerSalonIdKey, result.salon.id);
+      }
+
     } else {
       toast({ title: "Error", description: result.error || "Could not save salon details.", variant: "destructive" });
     }
@@ -168,7 +191,8 @@ export default function MySalonPage() {
     return <div className="container mx-auto p-8">Loading salon details...</div>;
   }
   if (role !== 'owner') {
-     return <div className="container mx-auto p-8">Access Denied.</div>;
+     // This should be caught by useEffect redirect, but as a safeguard.
+     return <div className="container mx-auto p-8">Access Denied. Redirecting...</div>;
   }
 
   return (
@@ -221,7 +245,7 @@ export default function MySalonPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Services Offered</Label>
+              <Label>Service Categories Offered</Label>
               <ScrollArea className="h-48 w-full rounded-md border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {DEFAULT_SERVICES.map(service => (
@@ -230,6 +254,7 @@ export default function MySalonPage() {
                         id={`service-${service.replace(/\s+/g, '-')}`}
                         checked={selectedServices.includes(service)}
                         onCheckedChange={() => handleCheckboxChange(service, selectedServices, setSelectedServices)}
+                        aria-label={service}
                       />
                       <Label htmlFor={`service-${service.replace(/\s+/g, '-')}`} className="font-normal text-sm">
                         {service}
@@ -250,6 +275,7 @@ export default function MySalonPage() {
                         id={`hours-${hours.replace(/\s+/g, '-')}`}
                         checked={selectedOperatingHours.includes(hours)}
                         onCheckedChange={() => handleCheckboxChange(hours, selectedOperatingHours, setSelectedOperatingHours)}
+                        aria-label={hours}
                       />
                       <Label htmlFor={`hours-${hours.replace(/\s+/g, '-')}`} className="font-normal text-sm">
                         {hours}
@@ -270,6 +296,7 @@ export default function MySalonPage() {
                         id={`amenity-${amenity.replace(/\s+/g, '-')}`}
                         checked={selectedAmenities.includes(amenity)}
                         onCheckedChange={() => handleCheckboxChange(amenity, selectedAmenities, setSelectedAmenities)}
+                        aria-label={amenity}
                       />
                       <Label htmlFor={`amenity-${amenity.replace(/\s+/g, '-')}`} className="font-normal text-sm">
                         {amenity}
@@ -280,7 +307,7 @@ export default function MySalonPage() {
               </ScrollArea>
             </div>
 
-            <Button type="submit" className="w-full text-lg py-6" disabled={isSubmitting}>
+            <Button type="submit" className="w-full text-lg py-6" disabled={isSubmitting || authLoading}>
               <Save className="mr-2 h-5 w-5" /> {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create Salon')}
             </Button>
           </CardContent>
@@ -289,5 +316,4 @@ export default function MySalonPage() {
     </div>
   );
 }
-
     
