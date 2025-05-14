@@ -3,68 +3,73 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAuth, type Auth } from "firebase/auth";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
-};
+// It's crucial that these are correctly set in .env.local or your hosting environment
+const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
+const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
+const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
+const measurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID; // Optional
 
-let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
+let app: FirebaseApp | undefined = undefined;
+let auth: Auth | undefined = undefined;
+let db: Firestore | undefined = undefined;
 
-// Check for essential Firebase config variables
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+if (!apiKey || !projectId) {
   console.error(
-    "Firebase initialization error: Missing API Key or Project ID. " +
-    "Please ensure NEXT_PUBLIC_FIREBASE_API_KEY and NEXT_PUBLIC_FIREBASE_PROJECT_ID are correctly set in your .env.local file " +
-    "and that you have restarted your development server."
+    "Firebase Core Configuration Error: Missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID. " +
+    "Please ensure these are correctly set in your .env.local file (and that you've restarted your dev server) or in your Firebase Studio environment settings. " +
+    "Firebase services will not be available."
   );
-  // Depending on how critical Firebase is at startup, you might throw an error here
-  // or allow the app to load with Firebase features disabled.
-  // For now, we'll log the error and proceed, which will likely cause issues if Firebase is used.
-}
+} else {
+  // All essential configurations seem to be present (as strings)
+  const firebaseConfig = {
+    apiKey,
+    authDomain,
+    projectId,
+    storageBucket,
+    messagingSenderId,
+    appId,
+    measurementId,
+  };
 
-if (getApps().length === 0) {
-  // Only attempt to initialize if essential configs are present
-  if (firebaseConfig.apiKey && firebaseConfig.projectId) {
-    try {
-      app = initializeApp(firebaseConfig);
-    } catch (error) {
-      console.error("Firebase initialization failed:", error);
-      // Handle the error appropriately - app might remain undefined
+  if (typeof window !== "undefined") { // Ensure Firebase is initialized only on the client-side for Next.js if not using App Router with server components that need it
+    if (getApps().length === 0) {
+      try {
+        app = initializeApp(firebaseConfig);
+        console.log("Firebase app initialized successfully on the client.");
+      } catch (error) {
+        console.error("Firebase client-side initialization failed:", error);
+        // app remains undefined
+      }
+    } else {
+      app = getApp(); // Use the existing initialized app
+      console.log("Using existing Firebase app instance on the client.");
     }
   } else {
-    // Log that initialization is skipped, app will remain undefined
-    console.warn("Firebase initialization skipped due to missing essential configuration values (API Key or Project ID).");
+    // Handling for server-side initialization if ever needed, though typically client-side for web apps.
+    // For Next.js App Router, direct server-side initialization might be less common for client SDKs.
+    // If you were using Firebase Admin SDK on the server, this part would be different.
+    console.warn("Firebase SDK initialization is primarily for client-side. Server-side initialization (if intended) would require a different approach (e.g., Firebase Admin SDK).");
   }
-} else {
-  app = getApp(); // Use the existing initialized app
-}
 
-// Initialize auth and db only if app was successfully initialized
-if (app!) { // Using non-null assertion, assuming app should be initialized if config is correct
-  auth = getAuth(app);
-  db = getFirestore(app);
-} else {
-  // If app is not initialized, auth and db cannot be.
-  // This will likely lead to errors when auth or db are accessed elsewhere,
-  // which will help identify the root configuration problem.
-  console.error("Firebase app instance is not available. Auth and Firestore cannot be initialized.");
-  // To prevent 'auth is not defined' errors later, you might assign dummy objects or throw:
-  // auth = {} as Auth; // Or throw new Error("Auth not initialized");
-  // db = {} as Firestore; // Or throw new Error("Firestore not initialized");
-  // For this prototype, we'll let subsequent errors occur if app isn't init'd
-  // as it points back to a setup issue.
+
+  if (app) {
+    try {
+      auth = getAuth(app);
+      db = getFirestore(app);
+      console.log("Firebase Auth and Firestore services obtained.");
+    } catch (serviceError) {
+      console.error("Failed to obtain Firebase Auth/Firestore services:", serviceError);
+      // auth and db might remain undefined or throw during getAuth/getFirestore
+    }
+  } else {
+    if (apiKey && projectId) { // Only warn if config was present but app still not initialized
+        console.warn("Firebase app instance is not available even though config was provided. Auth and Firestore cannot be initialized.");
+    }
+  }
 }
 
 export { app, auth, db };
