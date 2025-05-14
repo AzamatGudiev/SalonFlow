@@ -44,53 +44,84 @@ export default function SignupPage() {
     }
 
     setIsSubmitting(true);
+    console.log(`SignupPage: Attempting to create user with email: ${email}, role: ${role}`);
+
     try {
       // Step 1: Create user in Firebase Authentication
+      console.log("SignupPage: Calling createUserWithEmailAndPassword...");
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // If the above line throws an error, code execution will jump to the catch block.
+      // So, if we reach here, createUserWithEmailAndPassword SUCCEEDED.
+      console.log("SignupPage: createUserWithEmailAndPassword SUCCEEDED. UserCredential:", userCredential);
+      
       const firebaseUser = userCredential.user;
+      if (!firebaseUser || !firebaseUser.uid) {
+        // This case should be rare if createUserWithEmailAndPassword succeeded without error.
+        console.error("SignupPage: Firebase user or UID is null/undefined after successful auth creation.");
+        toast({
+          title: "Signup Failed",
+          description: "Failed to get user details after account creation. Please try again.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return; // Explicitly return here
+      }
+      console.log(`SignupPage: Firebase user created successfully. UID: ${firebaseUser.uid}`);
 
       // Step 2: Create user profile in Firestore
       const profileData: UserProfile = {
         uid: firebaseUser.uid,
         firstName,
         lastName,
-        email: firebaseUser.email || email, // Use email from Firebase Auth if available
+        email: firebaseUser.email || email, 
         role,
       };
+      console.log("SignupPage: Calling setUserProfile with data:", JSON.stringify(profileData));
       const profileResult = await setUserProfile(profileData);
-      console.log("SignupPage: setUserProfile result:", profileResult); // Added log
+      console.log("SignupPage: setUserProfile result:", JSON.stringify(profileResult)); 
 
       if (!profileResult.success) {
-        console.error("Failed to create user profile in Firestore:", profileResult.error);
+        console.error("SignupPage: Failed to create user profile in Firestore:", profileResult.error);
         toast({
           title: "Signup Partially Failed",
-          description: `Account created, but profile setup failed: ${profileResult.error || 'Unknown profile error'}. Please contact support. Firebase Code: ${profileResult.error?.includes('permission-denied') ? 'permission-denied' : 'OTHER_ERROR'}`,
+          description: `Account created, but profile setup failed: ${profileResult.error || 'Unknown profile error'}. Firebase Code: ${profileResult.error?.includes('permission-denied') ? 'permission-denied' : 'OTHER_ERROR'}`,
           variant: "destructive",
           duration: 9000, 
         });
-        // setIsSubmitting(false); // Handled by finally
-        return; 
+        // NOTE: User auth account exists, but Firestore profile creation failed.
+        // Depending on desired UX, you might want to try deleting the auth user here
+        // or guiding the user to contact support.
+      } else {
+        toast({
+          title: "Account Created!",
+          description: "You've been successfully signed up! Redirecting to dashboard...",
+        });
+        // router.push('/dashboard'); // Firebase onAuthStateChanged in useAuth will handle setting user state and redirect
       }
 
-      toast({
-        title: "Account Created!",
-        description: "You've been successfully signed up! Redirecting to dashboard...",
-      });
-      // router.push('/dashboard'); // Firebase onAuthStateChanged in useAuth will handle setting user state and redirect
-
     } catch (error: any) {
-      console.error("Firebase signup error:", error);
+      console.error("SignupPage: Firebase signup error in catch block:", error);
       let errorMessage = "An unknown error occurred during signup.";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "This email address is already in use. Please try another or log in.";
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = "The password is too weak. Please choose a stronger password.";
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "The email address is not valid.";
-      } else if (error.code === 'auth/configuration-not-found') {
-        errorMessage = "Firebase authentication is not configured correctly. Please contact support.";
-      } else {
-        errorMessage = error.message || "Failed to sign up.";
+      if (error.code) {
+        switch (error.code) {
+          case 'auth/email-already-in-use':
+            errorMessage = "This email address is already in use. Please try another or log in.";
+            break;
+          case 'auth/weak-password':
+            errorMessage = "The password is too weak. Please choose a stronger password (at least 6 characters).";
+            break;
+          case 'auth/invalid-email':
+            errorMessage = "The email address is not valid.";
+            break;
+          case 'auth/operation-not-allowed':
+            errorMessage = "Email/password accounts are not enabled. Contact support.";
+            break;
+          case 'auth/configuration-not-found':
+             errorMessage = "Firebase authentication is not configured correctly. Please contact support.";
+             break;
+          default:
+            errorMessage = error.message || "Failed to sign up.";
+        }
       }
       toast({
         title: "Signup Failed",
@@ -211,3 +242,5 @@ export default function SignupPage() {
     </Card>
   );
 }
+
+    
