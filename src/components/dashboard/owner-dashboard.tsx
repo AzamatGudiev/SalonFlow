@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, Users, Scissors, DollarSign, CalendarDays, Settings, LogOut } from "lucide-react";
+import { Activity, Users, Scissors, DollarSign, CalendarDays, Settings, LogOut, Building } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -80,6 +80,17 @@ export function OwnerDashboard() {
               <Button asChild className="w-full"><Link href="/dashboard/staff">Update Staff</Link></Button>
             </CardContent>
           </Card>
+          {role === 'owner' && (
+            <Card className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl text-primary"><Building className="h-6 w-6" /> Manage Your Salon</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground mb-4">Update your salon's details and information.</p>
+                <Button asChild className="w-full"><Link href="/dashboard/my-salon">Salon Details</Link></Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </section>
       
