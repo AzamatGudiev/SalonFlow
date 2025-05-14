@@ -2,14 +2,20 @@
 'use server';
 
 import { StaffSchema, type StaffMember } from '@/lib/schemas';
+import { db } from '@/lib/firebase';
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  doc, 
+  updateDoc, 
+  deleteDoc,
+  query,
+  where
+} from 'firebase/firestore';
 import { z } from 'zod';
 
-// Simulate a database or data store
-let staffStore: StaffMember[] = [
-  { id: "1", name: "Alice Wonderland", role: "Stylist", email: "alice@example.com", avatar: "https://placehold.co/100x100.png", initials: "AW", aiHint: "woman portrait" },
-  { id: "2", name: "Bob The Builder", role: "Barber", email: "bob@example.com", avatar: "https://placehold.co/100x100.png", initials: "BB", aiHint: "man portrait" },
-  { id: "3", name: "Carol Danvers", role: "Manicurist", email: "carol@example.com", avatar: "https://placehold.co/100x100.png", initials: "CD", aiHint: "woman smiling" },
-];
+const STAFF_COLLECTION = 'staff';
 
 function generateInitials(name: string): string {
   if (!name) return '??';
@@ -24,58 +30,124 @@ function generateInitials(name: string): string {
 }
 
 export async function getStaffMembers(): Promise<StaffMember[]> {
-  return JSON.parse(JSON.stringify(staffStore)); // Return a copy
+  if (!db) {
+    console.error("Firestore database is not initialized (getStaffMembers).");
+    return [];
+  }
+  try {
+    const staffCollectionRef = collection(db, STAFF_COLLECTION);
+    const querySnapshot = await getDocs(staffCollectionRef);
+    const staffList: StaffMember[] = [];
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      // Ensure initials and aiHint are present, generate if not (for older data perhaps)
+      const name = data.name || '';
+      const staffMember = StaffSchema.safeParse({ 
+        ...data, 
+        id: doc.id,
+        initials: data.initials || generateInitials(name),
+        aiHint: data.aiHint || name.split(' ')[0]?.toLowerCase() || 'person',
+        avatar: data.avatar || `https://placehold.co/100x100.png?text=${data.initials || generateInitials(name)}`
+      });
+      if (staffMember.success) {
+        staffList.push(staffMember.data);
+      } else {
+        console.warn("Fetched staff data is invalid:", staffMember.error.flatten().fieldErrors, "Document ID:", doc.id);
+      }
+    });
+    return staffList;
+  } catch (error) {
+    console.error("Error fetching staff from Firestore:", error);
+    return [];
+  }
 }
 
-export async function addStaffMember(data: Omit<StaffMember, 'id' | 'initials' | 'aiHint'> & { avatar?: string }): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
-  const rawData = {
+// Schema for adding staff (id, initials, aiHint are auto-generated or server-set)
+const AddStaffSchema = StaffSchema.omit({ id: true, initials: true, aiHint: true });
+
+export async function addStaffMember(data: z.infer<typeof AddStaffSchema>): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
+  if (!db) {
+    return { success: false, error: "Firestore database is not initialized (addStaffMember)." };
+  }
+  
+  const rawDataForValidation = {
+    ...data,
+    avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
+  };
+
+  const validationResult = AddStaffSchema.safeParse(rawDataForValidation);
+  if (!validationResult.success) {
+    const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
+    console.error("Validation errors (addStaffMember):", errorMessages);
+    return { success: false, error: errorMessages };
+  }
+
+  try {
+    const staffCollectionRef = collection(db, STAFF_COLLECTION);
+    const dataToSave = {
+      ...validationResult.data,
+      initials: generateInitials(validationResult.data.name),
+      aiHint: validationResult.data.name.split(' ')[0]?.toLowerCase() || 'person',
+      // Avatar already handled in rawDataForValidation and passed through validationResult.data
+    };
+    
+    const docRef = await addDoc(staffCollectionRef, dataToSave);
+    const newStaffMember: StaffMember = {
+      ...dataToSave,
+      id: docRef.id,
+    };
+    return { success: true, staffMember: newStaffMember };
+  } catch (error) {
+    console.error("Error adding staff member to Firestore:", error);
+    return { success: false, error: "Failed to add staff member to database." };
+  }
+}
+
+export async function updateStaffMember(data: StaffMember): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
+  if (!db) {
+    return { success: false, error: "Firestore database is not initialized (updateStaffMember)." };
+  }
+
+  const rawDataForValidation = {
     ...data,
     initials: generateInitials(data.name),
     aiHint: data.name.split(' ')[0]?.toLowerCase() || 'person',
     avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
   };
   
-  const validationResult = StaffSchema.omit({id: true}).safeParse(rawData);
+  const validationResult = StaffSchema.safeParse(rawDataForValidation);
   if (!validationResult.success) {
-    console.error("Validation errors:", validationResult.error.flatten().fieldErrors);
-    return { success: false, error: JSON.stringify(validationResult.error.flatten().fieldErrors) };
+    const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
+    console.error("Validation errors (updateStaffMember):", errorMessages);
+    return { success: false, error: errorMessages };
   }
 
-  const newStaffMember: StaffMember = {
-    ...validationResult.data,
-    id: String(Date.now() + Math.random()), // Simulate ID generation
-  };
-  staffStore.push(newStaffMember);
-  return { success: true, staffMember: newStaffMember };
-}
-
-export async function updateStaffMember(data: StaffMember): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
-   const rawData = {
-    ...data,
-    initials: generateInitials(data.name),
-    aiHint: data.name.split(' ')[0]?.toLowerCase() || 'person',
-    avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
-  };
-
-  const validationResult = StaffSchema.safeParse(rawData);
-  if (!validationResult.success) {
-    console.error("Validation errors:", validationResult.error.flatten().fieldErrors);
-    return { success: false, error: JSON.stringify(validationResult.error.flatten().fieldErrors) };
+  try {
+    const staffDocRef = doc(db, STAFF_COLLECTION, data.id);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, ...dataToUpdate } = validationResult.data; 
+    await updateDoc(staffDocRef, dataToUpdate);
+    return { success: true, staffMember: validationResult.data };
+  } catch (error) {
+    console.error("Error updating staff member in Firestore:", error);
+    return { success: false, error: "Failed to update staff member in database." };
   }
-
-  const index = staffStore.findIndex(s => s.id === data.id);
-  if (index === -1) {
-    return { success: false, error: "Staff member not found" };
-  }
-  staffStore[index] = validationResult.data;
-  return { success: true, staffMember: validationResult.data };
 }
 
 export async function deleteStaffMember(id: string): Promise<{ success: boolean; error?: string }> {
-  const initialLength = staffStore.length;
-  staffStore = staffStore.filter(s => s.id !== id);
-  if (staffStore.length === initialLength) {
-    return { success: false, error: "Staff member not found or already deleted" };
+  if (!db) {
+    return { success: false, error: "Firestore database is not initialized (deleteStaffMember)." };
   }
-  return { success: true };
+  if (!id) {
+    return { success: false, error: "Staff Member ID is required for deletion." };
+  }
+
+  try {
+    const staffDocRef = doc(db, STAFF_COLLECTION, id);
+    await deleteDoc(staffDocRef);
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting staff member from Firestore:", error);
+    return { success: false, error: "Failed to delete staff member from database." };
+  }
 }
