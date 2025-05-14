@@ -1,5 +1,5 @@
 
-'use client'; // Required for useToast
+'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,39 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useToast } from "@/hooks/use-toast"; // Import useToast
+import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
-const mockServices = [
+interface Service {
+  id: string;
+  name: string;
+  duration: string;
+  price: string;
+  category: string;
+}
+
+const initialServicesData: Service[] = [
   { id: "1", name: "Classic Haircut", duration: "45 min", price: "$50", category: "Hair" },
   { id: "2", name: "Manicure", duration: "30 min", price: "$30", category: "Nails" },
   { id: "3", name: "Deep Tissue Massage", duration: "60 min", price: "$80", category: "Spa" },
@@ -24,29 +54,87 @@ const mockServices = [
 ];
 
 export default function ServicesPage() {
-  const { toast } = useToast(); // Initialize useToast
+  const { toast } = useToast();
+  const [services, setServices] = useState<Service[]>([]);
+  const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
+  const [currentServiceToEdit, setCurrentServiceToEdit] = useState<Service | null>(null);
+  const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
-  const handleAddService = () => {
-    toast({
-      title: "Feature In Progress",
-      description: "Adding a new service is not yet implemented in this prototype.",
-    });
+  // Form state for Add/Edit Dialog
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [duration, setDuration] = useState('');
+  const [price, setPrice] = useState('');
+
+  // Effect to load initial data (client-side only)
+  useEffect(() => {
+    setServices(initialServicesData);
+  }, []);
+
+
+  const resetForm = () => {
+    setName('');
+    setCategory('');
+    setDuration('');
+    setPrice('');
+    setCurrentServiceToEdit(null);
   };
 
-  const handleEditService = (serviceName: string) => {
-    toast({
-      title: "Feature In Progress",
-      description: `Editing functionality for "${serviceName}" is not yet implemented.`,
-    });
+  const handleOpenAddDialog = () => {
+    resetForm();
+    setIsAddEditDialogOpen(true);
   };
 
-  const handleDeleteService = (serviceName: string) => {
-    toast({
-      title: "Action Simulated",
-      description: `In a real app, "${serviceName}" would be deleted. This is a prototype.`,
-      variant: "destructive",
-    });
+  const handleOpenEditDialog = (service: Service) => {
+    setCurrentServiceToEdit(service);
+    setName(service.name);
+    setCategory(service.category);
+    setDuration(service.duration);
+    setPrice(service.price);
+    setIsAddEditDialogOpen(true);
   };
+
+  const handleSaveService = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!name || !category || !duration || !price) {
+      toast({ title: "Error", description: "All fields are required.", variant: "destructive" });
+      return;
+    }
+
+    if (currentServiceToEdit) { // Editing existing service
+      setServices(services.map(s => s.id === currentServiceToEdit.id ? { ...currentServiceToEdit, name, category, duration, price } : s));
+      toast({ title: "Service Updated", description: `"${name}" has been updated.` });
+    } else { // Adding new service
+      const newService: Service = {
+        id: String(Date.now()), // simple unique ID for prototype
+        name,
+        category,
+        duration,
+        price,
+      };
+      setServices(prevServices => [...prevServices, newService]);
+      toast({ title: "Service Added", description: `"${name}" has been added.` });
+    }
+    setIsAddEditDialogOpen(false);
+    resetForm();
+  };
+
+  const handleOpenDeleteDialog = (service: Service) => {
+    setServiceToDelete(service);
+  };
+
+  const confirmDeleteService = () => {
+    if (serviceToDelete) {
+      setServices(services.filter(s => s.id !== serviceToDelete.id));
+      toast({ title: "Service Deleted", description: `"${serviceToDelete.name}" has been deleted.`, variant: "destructive" });
+      setServiceToDelete(null);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setIsAddEditDialogOpen(false);
+    resetForm();
+  }
 
   return (
     <div className="container mx-auto py-12 px-4">
@@ -71,7 +159,7 @@ export default function ServicesPage() {
             <CardTitle>Salon Services</CardTitle>
             <CardDescription>List of all services offered by your salon.</CardDescription>
           </div>
-          <Button onClick={handleAddService}> {/* Add onClick handler */}
+          <Button onClick={handleOpenAddDialog}>
             <PlusCircle className="mr-2 h-4 w-4" />
             Add New Service
           </Button>
@@ -89,17 +177,17 @@ export default function ServicesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockServices.map((service) => (
+              {services.map((service) => (
                 <TableRow key={service.id}>
                   <TableCell className="font-medium">{service.name}</TableCell>
                   <TableCell>{service.category}</TableCell>
                   <TableCell>{service.duration}</TableCell>
                   <TableCell>{service.price}</TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button variant="ghost" size="icon" aria-label="Edit Service" onClick={() => handleEditService(service.name)}> {/* Add onClick handler */}
+                    <Button variant="ghost" size="icon" aria-label="Edit Service" onClick={() => handleOpenEditDialog(service)}>
                       <Edit className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" aria-label="Delete Service" className="text-destructive hover:text-destructive" onClick={() => handleDeleteService(service.name)}> {/* Add onClick handler */}
+                    <Button variant="ghost" size="icon" aria-label="Delete Service" className="text-destructive hover:text-destructive" onClick={() => handleOpenDeleteDialog(service)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -107,7 +195,7 @@ export default function ServicesPage() {
               ))}
             </TableBody>
           </Table>
-          {mockServices.length === 0 && (
+          {services.length === 0 && (
             <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md mt-4">
               <p className="text-muted-foreground">No services added yet.</p>
               <p className="text-sm text-muted-foreground mt-2">Click &quot;Add New Service&quot; to get started.</p>
@@ -115,6 +203,60 @@ export default function ServicesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add/Edit Service Dialog */}
+      <Dialog open={isAddEditDialogOpen} onOpenChange={setIsAddEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <form onSubmit={handleSaveService}>
+            <DialogHeader>
+              <DialogTitle>{currentServiceToEdit ? 'Edit Service' : 'Add New Service'}</DialogTitle>
+              <DialogDescription>
+                {currentServiceToEdit ? 'Update the details of this service.' : 'Fill in the details for the new service.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="service-name" className="text-right">Name</Label>
+                <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" required aria-label="Service Name"/>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="service-category" className="text-right">Category</Label>
+                <Input id="service-category" value={category} onChange={(e) => setCategory(e.target.value)} className="col-span-3" required aria-label="Service Category"/>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="service-duration" className="text-right">Duration</Label>
+                <Input id="service-duration" value={duration} onChange={(e) => setDuration(e.target.value)} className="col-span-3" placeholder="e.g., 30 min" required aria-label="Service Duration"/>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="service-price" className="text-right">Price</Label>
+                <Input id="service-price" value={price} onChange={(e) => setPrice(e.target.value)} className="col-span-3" placeholder="e.g., $50" required aria-label="Service Price"/>
+              </div>
+            </div>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
+              </DialogClose>
+              <Button type="submit">Save Service</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!serviceToDelete} onOpenChange={(open) => !open && setServiceToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the service &quot;{serviceToDelete?.name}&quot;.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setServiceToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteService} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
