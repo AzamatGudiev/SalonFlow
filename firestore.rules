@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users:
+    // - Anyone can create their own user profile document (e.g., during signup).
+    // - Only the authenticated user can read or update their own profile.
+    // - Deletion of user profiles should ideally be handled by admin/server functions.
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false; // Prevent client-side deletion
+    }
+
+    // Salons:
+    // - Anyone can read salon listings and details.
+    // - Only authenticated users whose role is 'owner' (as per their /users/{uid} doc) can create salons.
+    //   The new salon's ownerUid must match the creator's UID.
+    // - Only the authenticated owner of a salon (ownerUid matches request.auth.uid) can update or delete it.
+    match /salons/{salonId} {
+      allow read: if true;
+      allow create: if request.auth != null &&
+                       request.resource.data.ownerUid == request.auth.uid &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+      allow update: if request.auth != null &&
+                       resource.data.ownerUid == request.auth.uid &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+                       request.resource.data.ownerUid == resource.data.ownerUid; // Ensure ownerUid cannot be changed
+      allow delete: if request.auth != null &&
+                       resource.data.ownerUid == request.auth.uid &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    // Services (Global specific services that salons can categorize):
+    // - Anyone can read services.
+    // - Only authenticated 'owners' or 'staff' can create, update, or delete services.
+    match /services/{serviceId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null &&
+                                     (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' ||
+                                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff');
+    }
+
+    // Staff:
+    // - Anyone can read staff details (e.g., for booking).
+    // - Only authenticated 'owners' can create staff, and the staff's salonId must match a salon they own.
+    // - Only authenticated 'owners' can update/delete staff from a salon they own.
+    match /staff/{staffId} {
+      allow read: if true;
+      function isSalonOwner(uid, salonId) {
+        return get(/databases/$(database)/documents/users/$(uid)).data.role == 'owner' &&
+               get(/databases/$(database)/documents/salons/$(salonId)).data.ownerUid == uid;
+      }
+      allow create: if request.auth != null &&
+                       isSalonOwner(request.auth.uid, request.resource.data.salonId);
+      allow update: if request.auth != null &&
+                       isSalonOwner(request.auth.uid, resource.data.salonId) &&
+                       request.resource.data.salonId == resource.data.salonId; // Prevent changing salonId of existing staff
+      allow delete: if request.auth != null &&
+                       isSalonOwner(request.auth.uid, resource.data.salonId);
+    }
+
+    // Bookings:
+    // - Authenticated users can create bookings for themselves.
+    // - Customers can read/update/delete their own bookings (customerEmail matches their auth email).
+    // - Owners/Staff of the booked salon can read/update/delete bookings for that salon.
+    match /bookings/{bookingId} {
+      allow create: if request.auth != null &&
+                       request.resource.data.customerEmail == request.auth.token.email; // Customer creates their own booking
+
+      function isBookingCustomer() {
+        return request.auth != null && request.auth.token.email == resource.data.customerEmail;
+      }
+      function isStaffOrOwnerOfBookedSalon() {
+        if (request.auth == null) {
+          return false;
+        }
+        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        let userRole = userDoc.role;
+        
+        let salonDoc = get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data;
+        if (userRole == 'owner' && salonDoc.ownerUid == request.auth.uid) {
+          return true;
+        }
+        // This revised staff check assumes staff members have a document in the 'staff' collection
+        // where their document ID is their Firebase Auth UID, and this document contains their 'salonId'.
+        if (userRole == 'staff') {
+          let staffProfile = get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
+          if (staffProfile.salonId == resource.data.salonId) {
+            return true;
+          }
+        }
+        return false;
+      }
+      allow read, update, delete: if request.auth != null && (isBookingCustomer() || isStaffOrOwnerOfBookedSalon());
+    }
+  }
+}
