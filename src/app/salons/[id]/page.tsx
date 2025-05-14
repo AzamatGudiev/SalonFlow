@@ -42,7 +42,7 @@ export default function SalonDetailPage() {
 
   // Booking form state
   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
-  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(''); // Can be 'any' or a staff member ID
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [bookingNotes, setBookingNotes] = useState<string>('');
@@ -54,12 +54,11 @@ export default function SalonDetailPage() {
       setIsLoading(true);
       Promise.all([
         getSalonById(salonId),
-        getServices(), // Fetch all services
-        getStaffMembers({ salonId: salonId }) // Fetch staff for this salon
+        getServices(), 
+        getStaffMembers({ salonId: salonId }) 
       ]).then(([foundSalon, allServices, staffForSalon]) => {
         setSalon(foundSalon);
         if (foundSalon) {
-          // Filter services: only show services whose category is in the salon's defined service categories
           const filteredServices = allServices.filter(service => 
             foundSalon.services.includes(service.category)
           );
@@ -80,14 +79,14 @@ export default function SalonDetailPage() {
   }, [salonId, toast]);
 
   const availableStaffForSelectedService = salonStaff.filter(staff => {
-    if (!selectedServiceId) return true; // Show all salon staff if no service is selected yet
+    if (!selectedServiceId) return true; 
     const service = salonServices.find(s => s.id === selectedServiceId);
     return service && staff.providedServices?.includes(service.name);
   });
 
   const handleBookAppointment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isLoggedIn || !user) {
+    if (!isLoggedIn || !user || !user.email) {
       toast({ title: "Login Required", description: "Please log in to book an appointment.", variant: "destructive" });
       router.push('/auth/login');
       return;
@@ -101,16 +100,19 @@ export default function SalonDetailPage() {
     const serviceDetails = salonServices.find(s => s.id === selectedServiceId);
     const staffDetails = salonStaff.find(s => s.id === selectedStaffId);
 
-    const bookingData: Omit<Booking, 'id'> = {
-      customerName: `${user.firstName} ${user.lastName}`, // Use logged-in user's name
+    const bookingDataInput: Omit<Booking, 'id'> = {
+      salonId: salon.id,
+      salonName: salon.name,
+      customerName: `${user.firstName} ${user.lastName}`, 
+      customerEmail: user.email,
       service: serviceDetails?.name || 'Unknown Service',
       date: format(selectedDate, 'yyyy-MM-dd'),
       time: selectedTime,
-      staff: staffDetails?.name || (selectedStaffId === 'any' ? 'Any Available' : undefined),
+      staff: staffDetails?.name || (selectedStaffId === 'any' || selectedStaffId === '' ? undefined : 'Unknown Staff'), // If 'any' or empty, don't specify staff, otherwise use name.
       notes: bookingNotes || undefined,
     };
     
-    const result = await addBooking(bookingData);
+    const result = await addBooking(bookingDataInput);
     setIsBookingLoading(false);
 
     if (result.success && result.booking) {
@@ -119,13 +121,11 @@ export default function SalonDetailPage() {
         description: `Your appointment for ${result.booking.service} at ${salon.name} on ${format(selectedDate, 'PPP')} at ${selectedTime} is confirmed.`,
         duration: 7000,
       });
-      // Reset form or redirect
       setSelectedServiceId('');
       setSelectedStaffId('');
       setSelectedDate(undefined);
       setSelectedTime('');
       setBookingNotes('');
-      // router.push('/dashboard/my-bookings'); // Optional: redirect to user's bookings
     } else {
       toast({ title: "Booking Failed", description: result.error || "Could not complete your booking.", variant: "destructive" });
     }
@@ -196,13 +196,13 @@ export default function SalonDetailPage() {
       <Card className="overflow-hidden shadow-xl">
         <div className="relative w-full h-64 md:h-96">
           <Image
-            src={salon.image}
+            src={salon.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(salon.name)}`}
             alt={salon.name}
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             priority
-            objectFit="cover"
-            data-ai-hint={salon.aiHint}
+            className="object-cover"
+            data-ai-hint={salon.aiHint || 'salon interior'}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent flex flex-col justify-end p-6">
             <h1 className="text-4xl md:text-5xl font-bold text-white shadow-md">{salon.name}</h1>
@@ -236,7 +236,7 @@ export default function SalonDetailPage() {
               <section className="mb-8">
                 <h2 className="text-2xl font-semibold text-foreground mb-4">Service Categories</h2>
                 <div className="flex flex-wrap gap-3">
-                  {salon.services.map(serviceCategory => ( // These are categories from salon.services
+                  {salon.services.map(serviceCategory => ( 
                     <Badge key={serviceCategory} variant="secondary" className="text-sm px-3 py-1.5 bg-primary/10 text-primary border-primary/30">
                       <ConciergeBell className="mr-2 h-4 w-4" /> {serviceCategory}
                     </Badge>
@@ -288,7 +288,7 @@ export default function SalonDetailPage() {
                     value={selectedServiceId} 
                     onValueChange={(value) => {
                       setSelectedServiceId(value);
-                      setSelectedStaffId(''); // Reset staff if service changes
+                      setSelectedStaffId(''); 
                     }}
                     required
                     disabled={salonServices.length === 0}
@@ -350,7 +350,7 @@ export default function SalonDetailPage() {
                         selected={selectedDate}
                         onSelect={setSelectedDate}
                         initialFocus
-                        disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() -1)) } // Disable past dates
+                        disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() -1)) } 
                       />
                     </PopoverContent>
                   </Popover>

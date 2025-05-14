@@ -11,7 +11,8 @@ import {
   updateDoc, 
   deleteDoc,
   query,
-  where
+  where,
+  orderBy
 } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -31,7 +32,9 @@ export async function getBookings(filters?: { salonId?: string; customerEmail?: 
     if (filters?.customerEmail) {
       bookingsQuery = query(bookingsQuery, where("customerEmail", "==", filters.customerEmail));
     }
-    // Add orderBy date if needed, e.g., orderBy("date", "desc")
+    
+    bookingsQuery = query(bookingsQuery, orderBy("date", "desc"), orderBy("time", "desc"));
+
 
     const querySnapshot = await getDocs(bookingsQuery);
     const bookings: Booking[] = [];
@@ -47,7 +50,6 @@ export async function getBookings(filters?: { salonId?: string; customerEmail?: 
     return bookings;
   } catch (error) {
     console.error("Error fetching bookings from Firestore:", error);
-    // In a real app, you might want to throw the error or return an error object
     return [];
   }
 }
@@ -71,9 +73,9 @@ export async function addBooking(data: Omit<Booking, 'id'>): Promise<{ success: 
       id: docRef.id,
     };
     return { success: true, booking: newBooking };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error adding booking to Firestore:", error);
-    return { success: false, error: "Failed to add booking to the database. Please try again." };
+    return { success: false, error: error.message || "Failed to add booking to the database. Please try again." };
   }
 }
 
@@ -94,9 +96,9 @@ export async function updateBooking(data: Booking): Promise<{ success: boolean; 
     const { id, ...dataToUpdate } = validationResult.data;
     await updateDoc(bookingDocRef, dataToUpdate);
     return { success: true, booking: validationResult.data };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error updating booking in Firestore:", error);
-    return { success: false, error: "Failed to update booking in the database. Please try again." };
+    return { success: false, error: error.message || "Failed to update booking in the database. Please try again." };
   }
 }
 
@@ -112,8 +114,8 @@ export async function deleteBooking(id: string): Promise<{ success: boolean; err
     const bookingDocRef = doc(db, BOOKINGS_COLLECTION, id);
     await deleteDoc(bookingDocRef);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting booking from Firestore:", error);
-    return { success: false, error: "Failed to delete booking from the database. Please try again." };
+    return { success: false, error: error.message || "Failed to delete booking from the database. Please try again." };
   }
 }

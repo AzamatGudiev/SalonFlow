@@ -46,8 +46,9 @@ export type StaffMember = z.infer<typeof StaffSchema>;
 export const BookingSchema = z.object({
   id: z.string().min(1, "ID is required."),
   salonId: z.string().min(1, "Salon ID for the booking is required."),
+  salonName: z.string().min(1, "Salon name is required for the booking."),
   customerName: z.string().min(1, "Customer name is required"),
-  customerEmail: z.string().email("Invalid customer email address."), // Email of the customer who booked
+  customerEmail: z.string().email("Invalid customer email address."),
   service: z.string().min(1, "Service selection is required."), // This will be service name
   date: z.string().min(1, "Date is required."),
   time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:MM)."),
