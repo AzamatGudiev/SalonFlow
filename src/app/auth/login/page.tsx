@@ -6,36 +6,62 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Chrome, User, Briefcase, Users as UsersIconLucide } from "lucide-react"; // Renamed Users to avoid conflict
+import { Chrome, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useAuth, type UserRole, type UserData } from '@/hooks/use-auth';
+import { useAuth } from '@/hooks/use-auth'; // useAuth will handle redirect via onAuthStateChanged
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { auth } from '@/lib/firebase'; // Import Firebase auth instance
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { isLoading: authIsLoading } = useAuth(); // Only need isLoading to disable form during auth check
   const { toast } = useToast();
-  const [email, setEmail] = useState('test@example.com');
-  const [password, setPassword] = useState('password');
-  const [role, setRole] = useState<UserRole>('customer');
+  const router = useRouter();
+  const [email, setEmail] = useState('test@example.com'); // Default for easier testing
+  const [password, setPassword] = useState('password');   // Default for easier testing
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // Simulate login by creating UserData based on role
-    const userData: UserData = {
-      firstName: 'Test',
-      lastName: role === 'owner' ? 'Owner' : (role === 'staff' ? 'Staff' : 'User'),
-      email,
-      role: role,
-    };
-    login(userData); // This will save to localStorage and navigate
+    if (!auth) {
+      toast({ title: "Error", description: "Authentication service is not available. Please try again later.", variant: "destructive" });
+      return;
+    }
+    if (!email || !password) {
+      toast({ title: "Error", description: "Please enter both email and password.", variant: "destructive" });
+      return;
+    }
 
-    toast({
-      title: "Logged In (Simulated)",
-      description: `Successfully logged in as ${role}. Redirecting...`,
-    });
-    // router.push('/dashboard') is handled by login function in useAuth
+    setIsSubmitting(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // Firebase onAuthStateChanged in useAuth will handle setting user state and redirecting
+      toast({
+        title: "Login Successful!",
+        description: "Redirecting to your dashboard...",
+      });
+      // No need to manually redirect here, onAuthStateChanged in useAuth does it.
+      // router.push('/dashboard'); // This will be handled by useAuth
+    } catch (error: any) {
+      console.error("Firebase login error:", error);
+      let errorMessage = "An unknown error occurred during login.";
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        errorMessage = "Invalid email or password. Please try again.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "The email address is not valid.";
+      } else if (error.code === 'auth/user-disabled') {
+        errorMessage = "This user account has been disabled.";
+      }
+      toast({
+        title: "Login Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -51,7 +77,7 @@ export default function LoginPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
-              <Input id="email" type="email" placeholder="you@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input id="email" type="email" placeholder="you@example.com" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={isSubmitting || authIsLoading}/>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -60,41 +86,15 @@ export default function LoginPage() {
                   Forgot password?
                 </Link>
               </div>
-              <Input id="password" type="password" placeholder="••••••••" required value={password} onChange={(e) => setPassword(e.target.value)} />
-            </div>
-            {/* Role selector for simulation purposes */}
-            <div className="space-y-2">
-              <Label htmlFor="role-login">Simulate login as:</Label>
-              <Select value={role || ''} onValueChange={(value) => setRole(value as UserRole)}>
-                <SelectTrigger id="role-login" className="w-full h-12 text-base" aria-label="Simulate login role">
-                  <SelectValue placeholder="Select role to simulate" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="customer">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-muted-foreground" /> Customer
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="owner">
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="h-4 w-4 text-muted-foreground" /> Salon Owner
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="staff">
-                    <div className="flex items-center gap-2">
-                      <UsersIconLucide className="h-4 w-4 text-muted-foreground" /> Salon Staff
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">This role selector is for simulation purposes only.</p>
+              <Input id="password" type="password" placeholder="••••••••" required value={password} onChange={(e) => setPassword(e.target.value)} disabled={isSubmitting || authIsLoading}/>
             </div>
           </div>
-          <Button type="submit" className="w-full text-lg py-6">
-            Log In
+          <Button type="submit" className="w-full text-lg py-6" disabled={isSubmitting || authIsLoading}>
+            {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+            {isSubmitting ? 'Logging In...' : 'Log In'}
           </Button>
           <Separator className="my-6" />
-          <Button variant="outline" className="w-full text-lg py-6" type="button" onClick={() => toast({ title: "Feature not implemented", description: "Google Sign-In is not yet available."})}>
+          <Button variant="outline" className="w-full text-lg py-6" type="button" onClick={() => toast({ title: "Feature not implemented", description: "Google Sign-In is not yet available."})} disabled={isSubmitting || authIsLoading}>
             <Chrome className="mr-2 h-5 w-5" />
             Continue with Google
           </Button>
