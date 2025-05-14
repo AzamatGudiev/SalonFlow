@@ -29,16 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-interface StaffMember {
-  id: string;
-  name: string;
-  role: string;
-  email: string;
-  avatar: string; // URL to avatar image
-  initials: string;
-  aiHint?: string;
-}
+import { StaffSchema, type StaffMember } from '@/lib/schemas';
 
 const initialStaffData: StaffMember[] = [
   { id: "1", name: "Alice Wonderland", role: "Stylist", email: "alice@example.com", avatar: "https://placehold.co/100x100.png", initials: "AW", aiHint: "woman portrait" },
@@ -48,11 +39,14 @@ const initialStaffData: StaffMember[] = [
 
 function generateInitials(name: string): string {
   if (!name) return '??';
-  const parts = name.split(' ');
-  if (parts.length > 1) {
+  const parts = name.trim().split(/\s+/); // Split by one or more spaces
+  if (parts.length > 1 && parts[0] && parts[parts.length - 1]) {
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
   }
-  return name.substring(0, 2).toUpperCase();
+  if (parts.length > 0 && parts[0] && parts[0].length > 0) {
+    return parts[0].substring(0, Math.min(2, parts[0].length)).toUpperCase();
+  }
+  return '??';
 }
 
 
@@ -71,8 +65,7 @@ export default function StaffPage() {
 
 
   useEffect(() => {
-    // Load initial data on component mount (client-side only)
-    setStaffList(initialStaffData);
+    setStaffList(initialStaffData.map(staff => ({...staff, initials: generateInitials(staff.name)})));
   }, []);
 
   const resetForm = () => {
@@ -93,36 +86,45 @@ export default function StaffPage() {
     setName(staff.name);
     setRole(staff.role);
     setEmail(staff.email);
-    setAvatarUrl(staff.avatar);
+    setAvatarUrl(staff.avatar || '');
     setIsAddEditDialogOpen(true);
   };
 
   const handleSaveStaff = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!name || !role || !email) {
-      toast({ title: "Error", description: "Name, Role, and Email are required.", variant: "destructive" });
-      return;
+    
+    const staffDataInput = {
+      id: currentStaffToEdit?.id || String(Date.now()),
+      name,
+      role,
+      email,
+      avatar: avatarUrl || undefined, // Keep it undefined if empty, schema handles optional
+      initials: generateInitials(name),
+      aiHint: name.split(' ')[0] || 'person',
+    };
+    
+    const validationResult = StaffSchema.safeParse(staffDataInput);
+
+    if(!validationResult.success) {
+        const errors = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(", ");
+        toast({ title: "Validation Error", description: errors, variant: "destructive" });
+        return;
     }
 
-    const staffData = { 
-        name, 
-        role, 
-        email, 
-        avatar: avatarUrl || `https://placehold.co/100x100.png?text=${generateInitials(name)}`, // Default placeholder if no URL
-        initials: generateInitials(name),
-        aiHint: name.split(' ')[0] // Simple AI hint
+    const validatedData = validationResult.data;
+    // Ensure avatar is a string, even if empty, for consistency if schema made it optional ''
+    const finalData = {
+      ...validatedData,
+      avatar: validatedData.avatar || `https://placehold.co/100x100.png?text=${validatedData.initials || generateInitials(validatedData.name)}`,
     };
 
-    if (currentStaffToEdit) { // Editing existing staff
-      setStaffList(staffList.map(s => s.id === currentStaffToEdit.id ? { ...currentStaffToEdit, ...staffData } : s));
-      toast({ title: "Staff Updated", description: `"${name}" has been updated.` });
-    } else { // Adding new staff
-      const newStaff: StaffMember = {
-        id: String(Date.now()), // simple unique ID for prototype
-        ...staffData,
-      };
-      setStaffList(prevStaffList => [...prevStaffList, newStaff]);
-      toast({ title: "Staff Added", description: `"${name}" has been added.` });
+
+    if (currentStaffToEdit) { 
+      setStaffList(staffList.map(s => s.id === currentStaffToEdit.id ? { ...currentStaffToEdit, ...finalData } : s));
+      toast({ title: "Staff Updated", description: `"${finalData.name}" has been updated.` });
+    } else { 
+      setStaffList(prevStaffList => [...prevStaffList, finalData]);
+      toast({ title: "Staff Added", description: `"${finalData.name}" has been added.` });
     }
     setIsAddEditDialogOpen(false);
     resetForm();
@@ -181,7 +183,7 @@ export default function StaffPage() {
                   <CardHeader className="flex flex-row items-center gap-4 p-4 bg-muted/30">
                     <Avatar className="h-16 w-16 border-2 border-primary">
                       <AvatarImage src={staff.avatar} alt={staff.name} data-ai-hint={staff.aiHint || 'person'} />
-                      <AvatarFallback>{staff.initials}</AvatarFallback>
+                      <AvatarFallback>{staff.initials || generateInitials(staff.name)}</AvatarFallback>
                     </Avatar>
                     <div>
                       <CardTitle className="text-lg text-primary">{staff.name}</CardTitle>
@@ -190,7 +192,6 @@ export default function StaffPage() {
                   </CardHeader>
                   <CardContent className="flex-grow p-4">
                     <p className="text-sm text-muted-foreground break-all">{staff.email}</p>
-                    {/* Placeholder for more staff details like schedule, services etc. */}
                   </CardContent>
                   <CardFooter className="p-4 pt-0 flex justify-end gap-2 border-t mt-auto">
                      <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(staff)}>
@@ -214,7 +215,10 @@ export default function StaffPage() {
       </Card>
 
       {/* Add/Edit Staff Dialog */}
-      <Dialog open={isAddEditDialogOpen} onOpenChange={setIsAddEditDialogOpen}>
+      <Dialog open={isAddEditDialogOpen} onOpenChange={(isOpen) => {
+        setIsAddEditDialogOpen(isOpen);
+        if (!isOpen) resetForm();
+       }}>
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleSaveStaff}>
             <DialogHeader>
@@ -243,9 +247,7 @@ export default function StaffPage() {
               </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
-              </DialogClose>
+              <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
               <Button type="submit">Save Staff Member</Button>
             </DialogFooter>
           </form>
@@ -270,5 +272,3 @@ export default function StaffPage() {
     </div>
   );
 }
-
-    

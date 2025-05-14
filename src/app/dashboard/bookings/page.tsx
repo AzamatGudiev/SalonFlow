@@ -38,21 +38,13 @@ import {
   TableRow,
   TableCaption
 } from "@/components/ui/table";
+import { BookingSchema, type Booking } from '@/lib/schemas';
 
-interface Booking {
-  id: string;
-  customerName: string;
-  service: string;
-  date: string;
-  time: string;
-  staff?: string; // Optional staff member
-  notes?: string; // Optional notes
-}
 
 const initialBookingsData: Booking[] = [
-  { id: "1", customerName: "John Doe", service: "Classic Haircut", date: "2024-08-15", time: "10:00 AM", staff: "Alice Wonderland", notes: "Prefers minimal chat." },
-  { id: "2", customerName: "Jane Smith", service: "Manicure", date: "2024-08-16", time: "02:30 PM", staff: "Carol Danvers" },
-  { id: "3", customerName: "Mike Johnson", service: "Deep Tissue Massage", date: "2024-08-18", time: "11:00 AM", notes: "Focus on shoulder area." },
+  { id: "1", customerName: "John Doe", service: "Classic Haircut", date: "2024-08-15", time: "10:00", staff: "Alice Wonderland", notes: "Prefers minimal chat." },
+  { id: "2", customerName: "Jane Smith", service: "Manicure", date: "2024-08-16", time: "14:30", staff: "Carol Danvers" },
+  { id: "3", customerName: "Mike Johnson", service: "Deep Tissue Massage", date: "2024-08-18", time: "11:00", notes: "Focus on shoulder area." },
 ];
 
 
@@ -98,20 +90,33 @@ export default function BookingsPage() {
 
   const handleSaveBooking = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!customerName || !service || !date || !time) {
-      toast({ title: "Error", description: "Customer Name, Service, Date, and Time are required.", variant: "destructive" });
+    
+    const bookingDataInput = { 
+        id: currentBookingToEdit?.id || String(Date.now()),
+        customerName, 
+        service, 
+        date, 
+        time, 
+        staff: staff || undefined, // Pass as undefined if empty for Zod optional
+        notes: notes || undefined  // Pass as undefined if empty for Zod optional
+    };
+
+    const validationResult = BookingSchema.safeParse(bookingDataInput);
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(", ");
+      toast({ title: "Validation Error", description: errors, variant: "destructive" });
       return;
     }
 
-    const bookingData = { customerName, service, date, time, staff: staff || undefined, notes: notes || undefined };
+    const validatedData = validationResult.data;
 
     if (currentBookingToEdit) {
-      setBookings(bookings.map(b => b.id === currentBookingToEdit.id ? { ...currentBookingToEdit, ...bookingData } : b));
-      toast({ title: "Booking Updated", description: `Booking for ${customerName} updated.` });
+      setBookings(bookings.map(b => b.id === currentBookingToEdit.id ? { ...currentBookingToEdit, ...validatedData } : b));
+      toast({ title: "Booking Updated", description: `Booking for ${validatedData.customerName} updated.` });
     } else {
-      const newBooking: Booking = { id: String(Date.now()), ...bookingData };
-      setBookings(prev => [newBooking, ...prev]); // Add to the top of the list
-      toast({ title: "Booking Added", description: `New booking for ${customerName} created.` });
+      setBookings(prev => [validatedData, ...prev]); 
+      toast({ title: "Booking Added", description: `New booking for ${validatedData.customerName} created.` });
     }
     setIsAddEditDialogOpen(false);
     resetForm();
@@ -182,7 +187,7 @@ export default function BookingsPage() {
                   <TableRow key={booking.id}>
                     <TableCell className="font-medium">{booking.customerName}</TableCell>
                     <TableCell>{booking.service}</TableCell>
-                    <TableCell>{booking.date}</TableCell>
+                    <TableCell>{new Date(booking.date).toLocaleDateString()}</TableCell>
                     <TableCell>{booking.time}</TableCell>
                     <TableCell>{booking.staff || 'Any'}</TableCell>
                     <TableCell className="text-right space-x-1">
@@ -210,7 +215,10 @@ export default function BookingsPage() {
       </Card>
 
        {/* Add/Edit Booking Dialog */}
-      <Dialog open={isAddEditDialogOpen} onOpenChange={setIsAddEditDialogOpen}>
+      <Dialog open={isAddEditDialogOpen} onOpenChange={(isOpen) => {
+        setIsAddEditDialogOpen(isOpen);
+        if (!isOpen) resetForm();
+      }}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSaveBooking}>
             <DialogHeader>
@@ -222,35 +230,33 @@ export default function BookingsPage() {
             <div className="grid gap-4 py-4">
               <div className="space-y-1.5">
                 <Label htmlFor="customerName">Customer Name</Label>
-                <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., John Doe" required />
+                <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., John Doe" aria-label="Customer Name" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="service">Service</Label>
-                <Input id="service" value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g., Haircut, Manicure" required />
+                <Input id="service" value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g., Haircut, Manicure" aria-label="Service" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="date">Date</Label>
-                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="time">Time</Label>
-                  <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+                  <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="staff">Staff Member (Optional)</Label>
-                <Input id="staff" value={staff} onChange={(e) => setStaff(e.target.value)} placeholder="e.g., Alice" />
+                <Input id="staff" value={staff} onChange={(e) => setStaff(e.target.value)} placeholder="e.g., Alice" aria-label="Staff Member" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Notes (Optional)</Label>
-                <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any specific requests or preferences..." />
+                <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any specific requests or preferences..." aria-label="Notes" />
               </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
-              </DialogClose>
+              <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
               <Button type="submit">Save Booking</Button>
             </DialogFooter>
           </form>
@@ -276,5 +282,3 @@ export default function BookingsPage() {
     </div>
   );
 }
-
-    
