@@ -16,9 +16,9 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
 
   // Log current auth state on the server when this action is called
   if (auth) {
-    console.log("setUserProfile ACTION: auth.currentUser on server:", auth.currentUser ? auth.currentUser.uid : 'null');
+    console.log("setUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
   } else {
-    console.log("setUserProfile ACTION: auth object from firebase.ts is null/undefined on server.");
+    console.log("setUserProfile ACTION: auth object from firebase.ts is null/undefined on server (at start of action).");
   }
 
   if (!db) {
@@ -61,9 +61,9 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
 export async function getUserProfile(uid: string): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
   console.log("getUserProfile ACTION: Attempting to fetch profile for UID:", uid);
   if (auth) {
-    console.log("getUserProfile ACTION: auth.currentUser on server:", auth.currentUser ? auth.currentUser.uid : 'null');
+    console.log("getUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
   } else {
-    console.log("getUserProfile ACTION: auth object from firebase.ts is null/undefined on server.");
+    console.log("getUserProfile ACTION: auth object from firebase.ts is null/undefined on server (at start of action).");
   }
   if (!db) {
     const errorMsg = "Firestore database is not initialized (getUserProfile).";
@@ -104,3 +104,4 @@ export async function getUserProfile(uid: string): Promise<{ success: boolean; p
     return { success: false, error: `Failed to fetch user profile. Firebase Code: ${error.code || 'UNKNOWN_ERROR'}` };
   }
 }
+

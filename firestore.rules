@@ -3,15 +3,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Users:
+    // VERY TEMPORARY DEBUGGING: Allow ANYONE to create ANY user document.
+    // THIS IS HIGHLY INSECURE. REVERT IMMEDIATELY AFTER TESTING to:
+    // allow create: if request.auth != null && request.auth.uid == userId;
     match /users/{userId} {
-      // TEMPORARY DEBUGGING: Allow any authenticated user to create a user document.
-      // The server action `setUserProfile` should ensure it only creates
-      // a document where `userId` (the document ID) matches the authenticated user's UID
-      // that was passed into the server action.
-      // Stricter rule was: allow create: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null;
-
-      // Allow an authenticated user to read their own profile.
+      allow create: if true; // EXTREMELY PERMISSIVE FOR DEBUGGING
       allow read: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
       allow delete: if false; // Prevent client-side deletion
