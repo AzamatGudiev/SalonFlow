@@ -108,3 +108,4 @@ export async function getUserProfile(uid: string): Promise<{ success: boolean; p
     return { success: false, error: `Failed to fetch user profile. Firebase Code: ${error.code || 'UNKNOWN_ERROR'}` };
   }
 }
+
