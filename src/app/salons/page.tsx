@@ -1,64 +1,53 @@
 
 'use client';
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent, useTransition } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, MapPin, Star } from "lucide-react";
+import { Search, MapPin, Star, Loader2 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link"; // Added Link import
-import { useRouter } from "next/navigation"; // Added useRouter import
+import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-
-interface Salon {
-  id: string;
-  name: string;
-  location: string;
-  rating: number;
-  services: string[];
-  image: string;
-  aiHint: string;
-}
-
-const allMockSalons: Salon[] = [
-  { id: '1', name: 'Chic & Sleek Salon', location: '123 Beauty Ave, Glamour City', rating: 4.8, services: ['Haircut', 'Coloring', 'Styling', 'Manicure'], image: 'https://placehold.co/600x400.png', aiHint: 'modern salon' },
-  { id: '2', name: 'Urban Oasis Spa', location: '456 Serenity Rd, Metroville', rating: 4.5, services: ['Massage', 'Facials', 'Manicure', 'Pedicure'], image: 'https://placehold.co/600x400.png', aiHint: 'spa interior' },
-  { id: '3', name: 'The Gentleman\'s Cut', location: '789 Dapper St, Suave Town', rating: 4.9, services: ['Men\'s Haircut', 'Beard Trim', 'Shave', 'Hot Towel'], image: 'https://placehold.co/600x400.png', aiHint: 'barber shop' },
-  { id: '4', name: 'Nail Perfection Studio', location: '101 Polish Pl, Sparkle City', rating: 4.7, services: ['Manicure', 'Pedicure', 'Nail Art', 'Gel Nails'], image: 'https://placehold.co/600x400.png', aiHint: 'nail salon' },
-  { id: '5', name: 'Radiant Beauty Center', location: '202 Glow St, Luminous Town', rating: 4.6, services: ['Facials', 'Waxing', 'Lash Extensions', 'Coloring'], image: 'https://placehold.co/600x400.png', aiHint: 'beauty center' },
-];
-
+import type { Salon } from '@/lib/schemas'; // Using the Salon type from schemas
+import { getSalons } from '@/app/actions/salonActions';
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SalonsPage() {
   const { toast } = useToast();
-  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredSalons, setFilteredSalons] = useState<Salon[]>(allMockSalons);
+  const [displayedSalons, setDisplayedSalons] = useState<Salon[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, startSearchTransition] = useTransition();
+
+  const fetchAndSetSalons = async (query?: string) => {
+    setIsLoading(true);
+    try {
+      const salons = await getSalons(query);
+      setDisplayedSalons(salons);
+      if (query && salons.length === 0) {
+        toast({
+            title: "No Results",
+            description: `No salons found matching "${query}". Try a different search.`,
+        });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Could not fetch salons.", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (searchQuery === '') {
-      setFilteredSalons(allMockSalons);
-    } else {
-      const lowerCaseQuery = searchQuery.toLowerCase();
-      const results = allMockSalons.filter(salon => 
-        salon.name.toLowerCase().includes(lowerCaseQuery) ||
-        salon.location.toLowerCase().includes(lowerCaseQuery) ||
-        salon.services.some(service => service.toLowerCase().includes(lowerCaseQuery))
-      );
-      setFilteredSalons(results);
-    }
-  }, [searchQuery]);
+    fetchAndSetSalons(); // Initial fetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // Search query state update already triggers useEffect for filtering
-    if (filteredSalons.length === 0 && searchQuery !== '') {
-        toast({
-            title: "No Results",
-            description: `No salons found matching "${searchQuery}". Try a different search.`,
-        });
-    }
+    startSearchTransition(() => {
+      fetchAndSetSalons(searchQuery);
+    });
   };
 
   return (
@@ -80,21 +69,46 @@ export default function SalonsPage() {
             aria-label="Search salons"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            disabled={isSearching}
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         </div>
-         <Button type="submit" className="sr-only">Submit Search</Button>
+         <Button type="submit" className="sr-only" disabled={isSearching}>
+            {isSearching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Submit Search
+         </Button>
       </form>
 
-      {filteredSalons.length > 0 ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredSalons.map((salon) => (
+          {[...Array(3)].map((_, i) => (
+            <Card key={i} className="overflow-hidden flex flex-col">
+              <Skeleton className="w-full h-56" />
+              <CardHeader>
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-1/2" />
+              </CardHeader>
+              <CardContent className="flex-grow">
+                <Skeleton className="h-5 w-1/4 mb-3" />
+                <Skeleton className="h-4 w-full mb-1.5" />
+                <Skeleton className="h-4 w-3/4" />
+              </CardContent>
+              <div className="p-6 pt-0">
+                <Skeleton className="h-10 w-full" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : displayedSalons.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {displayedSalons.map((salon) => (
             <Card key={salon.id} className="overflow-hidden transform transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex flex-col">
               <div className="relative w-full h-56">
                 <Image 
                   src={salon.image} 
                   alt={salon.name} 
-                  fill // Use fill instead of layout="fill"
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   objectFit="cover"
                   data-ai-hint={salon.aiHint}
                 />
@@ -115,9 +129,9 @@ export default function SalonsPage() {
                   <h4 className="text-sm font-medium text-foreground mb-1.5">Popular Services:</h4>
                   <div className="flex flex-wrap gap-2">
                     {salon.services.slice(0, 3).map(service => (
-                      <span key={service} className="text-xs bg-accent/20 text-primary px-2 py-1 rounded-full">{service}</span>
+                      <span key={service} className="text-xs bg-primary/10 text-primary/80 px-2 py-1 rounded-full border border-primary/20">{service}</span>
                     ))}
-                    {salon.services.length > 3 && <span className="text-xs bg-accent/20 text-primary px-2 py-1 rounded-full">...</span>}
+                    {salon.services.length > 3 && <span className="text-xs bg-primary/10 text-primary/80 px-2 py-1 rounded-full border border-primary/20">...</span>}
                   </div>
                 </div>
               </CardContent>
@@ -132,13 +146,11 @@ export default function SalonsPage() {
       ) : (
         <div className="text-center py-10">
             <Search className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-xl font-semibold text-muted-foreground">No salons found matching your search.</p>
-            <p className="text-sm text-muted-foreground mt-2">Try adjusting your search terms or browse all salons.</p>
-             <Button variant="link" onClick={() => setSearchQuery('')} className="mt-4">Clear Search</Button>
+            <p className="text-xl font-semibold text-muted-foreground">No salons found.</p>
+            {searchQuery && <p className="text-sm text-muted-foreground mt-2">Try adjusting your search terms for &quot;{searchQuery}&quot; or clear the search.</p>}
+            <Button variant="link" onClick={() => { setSearchQuery(''); fetchAndSetSalons(); }} className="mt-4">Clear Search</Button>
         </div>
       )}
     </div>
   );
 }
-
-    

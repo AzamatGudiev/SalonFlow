@@ -6,88 +6,15 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, MapPin, Star, CalendarDays, Tag, Clock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, MapPin, Star, CalendarDays, Tag, Clock, ShieldCheck, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import type { Salon } from '@/lib/schemas'; // Using the Salon type from schemas
+import { getSalonById } from '@/app/actions/salonActions';
+import { Skeleton } from '@/components/ui/skeleton';
 
-interface Salon {
-  id: string;
-  name: string;
-  location: string;
-  rating: number;
-  services: string[];
-  image: string;
-  aiHint: string;
-  description?: string;
-  operatingHours?: string[]; // e.g., ["Mon-Fri: 9 AM - 7 PM", "Sat: 10 AM - 5 PM"]
-  amenities?: string[]; // e.g., ["Wi-Fi", "Parking", "Refreshments"]
-}
-
-// Expanded mock data to include details for the detail page
-const allMockSalons: Salon[] = [
-  { 
-    id: '1', 
-    name: 'Chic & Sleek Salon', 
-    location: '123 Beauty Ave, Glamour City', 
-    rating: 4.8, 
-    services: ['Haircut & Style', 'Advanced Hair Coloring', 'Keratin Treatment', 'Bridal Hair', 'Manicure', 'Pedicure'], 
-    image: 'https://placehold.co/1200x800.png', 
-    aiHint: 'modern salon luxury',
-    description: 'Chic & Sleek Salon offers a luxurious experience with top-tier stylists specializing in modern cuts, vibrant colors, and transformative treatments. We use premium products to ensure your hair stays healthy and beautiful.',
-    operatingHours: ["Mon - Fri: 9:00 AM - 7:00 PM", "Saturday: 10:00 AM - 6:00 PM", "Sunday: Closed"],
-    amenities: ["Free Wi-Fi", "Complimentary Refreshments", "Parking Available", "Air Conditioned"]
-  },
-  { 
-    id: '2', 
-    name: 'Urban Oasis Spa', 
-    location: '456 Serenity Rd, Metroville', 
-    rating: 4.5, 
-    services: ['Swedish Massage', 'Deep Tissue Massage', 'Rejuvenating Facials', 'Body Wraps', 'Aromatherapy'], 
-    image: 'https://placehold.co/1200x800.png', 
-    aiHint: 'spa interior tranquil',
-    description: 'Escape the hustle and bustle at Urban Oasis Spa. Our certified therapists provide a range of massages, facials, and body treatments designed to relax your mind and revitalize your body.',
-    operatingHours: ["Tue - Sat: 10:00 AM - 8:00 PM", "Sunday: 11:00 AM - 5:00 PM", "Monday: Closed"],
-    amenities: ["Relaxation Lounge", "Herbal Tea Selection", "Private Treatment Rooms", "Soothing Music"]
-  },
-  { 
-    id: '3', 
-    name: 'The Gentleman\'s Cut', 
-    location: '789 Dapper St, Suave Town', 
-    rating: 4.9, 
-    services: ['Classic Men\'s Haircut', 'Modern Fades', 'Hot Towel Shave', 'Beard Trim & Sculpting', 'Scalp Treatments'], 
-    image: 'https://placehold.co/1200x800.png', 
-    aiHint: 'barber shop classic',
-    description: 'Experience traditional barbering with a modern twist at The Gentleman\'s Cut. Our skilled barbers provide precision haircuts, classic shaves, and expert beard care in a relaxed, masculine environment.',
-    operatingHours: ["Mon - Sat: 9:00 AM - 7:30 PM", "Sunday: 10:00 AM - 4:00 PM"],
-    amenities: ["Leather Barber Chairs", "Sports TV", "Complimentary Whiskey/Beer (21+)", "Classic Grooming Products"]
-  },
-  { 
-    id: '4', 
-    name: 'Nail Perfection Studio', 
-    location: '101 Polish Pl, Sparkle City', 
-    rating: 4.7, 
-    services: ['Classic Manicure', 'Gel Manicure (Shellac)', 'Luxury Pedicure', 'Custom Nail Art', 'Acrylic Extensions'], 
-    image: 'https://placehold.co/1200x800.png', 
-    aiHint: 'nail salon colorful',
-    description: 'At Nail Perfection Studio, we believe your nails are a work of art. Our talented technicians offer a wide array of nail services, from classic manicures to intricate nail art, using high-quality, long-lasting products.',
-    operatingHours: ["Mon - Sun: 10:00 AM - 8:00 PM"],
-    amenities: ["Wide Color Selection", "Comfortable Pedicure Stations", "Sanitized Equipment", "Loyalty Program"]
-  },
-  { 
-    id: '5', 
-    name: 'Radiant Beauty Center', 
-    location: '202 Glow St, Luminous Town', 
-    rating: 4.6, 
-    services: ['Signature Facials', 'Body Waxing', 'Eyebrow Shaping', 'Eyelash Extensions', 'Makeup Application', 'Hair Coloring'], 
-    image: 'https://placehold.co/1200x800.png', 
-    aiHint: 'beauty center bright',
-    description: 'Radiant Beauty Center is your one-stop destination for all things beauty. We offer a comprehensive range of services from expert skincare and waxing to stunning makeup and hair transformations.',
-    operatingHours: ["Tue - Fri: 9:00 AM - 6:00 PM", "Saturday: 9:00 AM - 5:00 PM", "Sun, Mon: Closed"],
-    amenities: ["Consultation Available", "Professional Makeup Station", "Quiet Treatment Rooms", "High-Quality Skincare Products"]
-  },
-];
 
 export default function SalonDetailPage() {
   const params = useParams();
@@ -99,16 +26,25 @@ export default function SalonDetailPage() {
 
   useEffect(() => {
     if (salonId) {
-      const foundSalon = allMockSalons.find(s => s.id === salonId);
-      setSalon(foundSalon || null);
+      setIsLoading(true);
+      getSalonById(salonId)
+        .then(foundSalon => {
+          setSalon(foundSalon);
+        })
+        .catch(error => {
+          console.error("Error fetching salon details:", error);
+          toast({ title: "Error", description: "Could not fetch salon details.", variant: "destructive" });
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    } else {
+      setIsLoading(false); // No ID, so not loading
     }
-    setIsLoading(false);
-  }, [salonId]);
+  }, [salonId, toast]);
 
   const handleBookAppointment = () => {
     if (!salon) return;
-    // In a real app, this would navigate to a booking flow or open a booking modal.
-    // For this prototype, we'll show a toast.
     toast({
       title: "Booking Simulated!",
       description: `Your appointment request for ${salon.name} has been noted. (This is a prototype action)`,
@@ -117,7 +53,41 @@ export default function SalonDetailPage() {
   };
 
   if (isLoading) {
-    return <div className="container mx-auto py-12 px-4 text-center">Loading salon details...</div>;
+    return (
+      <div className="container mx-auto py-8 px-4 animate-pulse">
+        <Skeleton className="h-9 w-36 mb-6" />
+        <Card className="overflow-hidden">
+          <Skeleton className="w-full h-64 md:h-96" />
+          <div className="grid md:grid-cols-3 gap-0">
+            <div className="md:col-span-2 p-6 md:p-8">
+              <Skeleton className="h-10 w-3/4 mb-2" />
+              <Skeleton className="h-5 w-1/2 mb-6" />
+              <Skeleton className="h-6 w-1/3 mb-3" />
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-5/6 mb-8" />
+              <Skeleton className="h-px w-full my-8" />
+              <Skeleton className="h-6 w-1/2 mb-4" />
+              <div className="flex flex-wrap gap-3">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-24 rounded-full" />)}
+              </div>
+            </div>
+            <aside className="md:col-span-1 bg-secondary/50 p-6 md:p-8 border-l">
+              <div className="sticky top-24">
+                <Skeleton className="h-8 w-1/2 mb-4" />
+                <Skeleton className="h-12 w-full mb-6" />
+                <Skeleton className="h-6 w-1/3 mb-2" />
+                <Skeleton className="h-4 w-full mb-1" />
+                <Skeleton className="h-4 w-full mb-1" />
+                <Skeleton className="h-4 w-3/4 mb-6" />
+                <Skeleton className="h-6 w-1/2 mb-2" />
+                <Skeleton className="h-4 w-full" />
+              </div>
+            </aside>
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   if (!salon) {
@@ -149,9 +119,10 @@ export default function SalonDetailPage() {
             src={salon.image}
             alt={salon.name}
             fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            priority
             objectFit="cover"
             data-ai-hint={salon.aiHint}
-            priority
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent flex flex-col justify-end p-6">
             <h1 className="text-4xl md:text-5xl font-bold text-white shadow-md">{salon.name}</h1>
@@ -198,7 +169,7 @@ export default function SalonDetailPage() {
                 <Separator className="my-8" />
                 <section>
                     <h2 className="text-2xl font-semibold text-foreground mb-4">Amenities</h2>
-                    <ul className="grid grid-cols-2 gap-x-6 gap-y-2 text-muted-foreground">
+                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-muted-foreground">
                     {salon.amenities.map(amenity => (
                         <li key={amenity} className="flex items-center">
                         <ShieldCheck className="h-5 w-5 mr-2 text-green-500" /> {amenity}
@@ -244,5 +215,3 @@ export default function SalonDetailPage() {
     </div>
   );
 }
-
-    

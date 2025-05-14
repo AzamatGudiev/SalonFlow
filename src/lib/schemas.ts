@@ -1,6 +1,21 @@
 
 import { z } from 'zod';
 
+// UserRole type for consistency
+export const UserRoleEnum = z.enum(['customer', 'owner', 'staff']);
+export type UserRole = z.infer<typeof UserRoleEnum>;
+
+// User Schema
+export const UserSchema = z.object({
+  id: z.string().min(1, "ID is required."),
+  firstName: z.string().min(1, "First name is required."),
+  lastName: z.string().min(1, "Last name is required."),
+  email: z.string().email("Invalid email address."),
+  role: UserRoleEnum,
+  password: z.string().min(8, "Password must be at least 8 characters.").optional(), // Optional for now, will be hashed in backend
+});
+export type User = z.infer<typeof UserSchema>;
+
 // Service Schema
 export const ServiceSchema = z.object({
   id: z.string().min(1, "ID is required."),
@@ -36,7 +51,17 @@ export const BookingSchema = z.object({
 });
 export type Booking = z.infer<typeof BookingSchema>;
 
-
-// Placeholder for User Schema (related to authentication)
-// export const UserSchema = z.object({...});
-// export type User = z.infer<typeof UserSchema>;
+// Salon Schema (for salonActions.ts)
+export const SalonSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  location: z.string(),
+  rating: z.number(),
+  services: z.array(z.string()),
+  image: z.string().url(),
+  aiHint: z.string(),
+  description: z.string().optional(),
+  operatingHours: z.array(z.string()).optional(),
+  amenities: z.array(z.string()).optional(),
+});
+export type Salon = z.infer<typeof SalonSchema>;
