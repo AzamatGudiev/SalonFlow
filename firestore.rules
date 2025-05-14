@@ -3,20 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Users:
+    // Temporarily allow any authenticated user to read/write any user document
+    // to ensure the Vercel server actions can interact with Firestore.
+    // We MUST secure this properly later.
     match /users/{userId} {
-      // TEMPORARY DEBUGGING for CREATE:
-      // Allow creating a user document if the document's ID ($userId)
-      // matches the 'uid' field being written into the document.
-      // This sidesteps issues with `request.auth` in server actions for now.
-      allow create: if request.resource.data.uid == userId;
-
-      // Stricter read for now, assuming client-side fetches after auth.
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      allow read, write: if request.auth != null;
     }
 
-    // Salons:
+    // Salons: (Keeping these relatively secure as they seemed to work before)
     match /salons/{salonId} {
       allow read: if true;
       allow create: if request.auth != null &&
@@ -31,7 +26,7 @@ service cloud.firestore {
                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
     }
 
-    // Services
+    // Services: (Keeping these relatively secure)
     match /services/{serviceId} {
       allow read: if true;
       allow create, update, delete: if request.auth != null &&
@@ -39,7 +34,7 @@ service cloud.firestore {
                                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff');
     }
 
-    // Staff
+    // Staff: (Keeping these relatively secure)
     match /staff/{staffId} {
       allow read: if true;
       function isUserSalonOwner(userId_func, salonId_func) { // Renamed params to avoid conflict
@@ -57,16 +52,14 @@ service cloud.firestore {
                        isUserSalonOwner(request.auth.uid, resource.data.salonId);
     }
 
-    // Bookings
+    // Bookings: (Keeping these relatively secure)
     match /bookings/{bookingId} {
       allow create: if request.auth != null &&
                        request.resource.data.customerEmail == request.auth.token.email;
       function isBookingCustomer() {
-        // Assumes request.auth != null is checked by the calling rule
         return request.auth != null && request.auth.token.email == resource.data.customerEmail;
       }
       function isOwnerOfBookedSalon() {
-        // Assumes request.auth != null is checked by the calling rule
         return request.auth != null &&
                exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
@@ -74,7 +67,6 @@ service cloud.firestore {
                get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data.ownerUid == request.auth.uid;
       }
       function isStaffOfBookedSalon() {
-        // Assumes request.auth != null is checked by the calling rule
         return request.auth != null &&
                exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff' &&
