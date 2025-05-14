@@ -58,12 +58,13 @@ export default function SignupPage() {
         role,
       };
       const profileResult = await setUserProfile(profileData);
+      console.log("SignupPage: setUserProfile result:", profileResult); // Added log
 
       if (!profileResult.success) {
         console.error("Failed to create user profile in Firestore:", profileResult.error);
         toast({
           title: "Signup Partially Failed",
-          description: `Account created, but profile setup failed: ${profileResult.error || 'Unknown profile error'}. Please contact support.`,
+          description: `Account created, but profile setup failed: ${profileResult.error || 'Unknown profile error'}. Please contact support. Firebase Code: ${profileResult.error?.includes('permission-denied') ? 'permission-denied' : 'OTHER_ERROR'}`,
           variant: "destructive",
           duration: 9000, 
         });
