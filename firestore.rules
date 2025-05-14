@@ -1,10 +1,11 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // Users:
-    // - Anyone can create their own user profile document (e.g., during signup).
+    // - Authenticated users can create their own user profile document (e.g., during signup).
     // - Only the authenticated user can read or update their own profile.
     // - Deletion of user profiles should ideally be handled by admin/server functions.
     match /users/{userId} {
@@ -67,27 +68,38 @@ service cloud.firestore {
     // - Owners/Staff of the booked salon can read/update/delete bookings for that salon.
     match /bookings/{bookingId} {
       allow create: if request.auth != null &&
-                       request.resource.data.customerEmail == request.auth.token.email; // Customer creates their own booking
+                       request.resource.data.customerEmail == request.auth.token.email;
 
       function isBookingCustomer() {
         return request.auth != null && request.auth.token.email == resource.data.customerEmail;
       }
+
+      // Function to check if the requesting user is an owner or staff of the salon associated with the booking
       function isStaffOrOwnerOfBookedSalon() {
+        // User must be authenticated
         if (request.auth == null) {
           return false;
         }
-        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-        let userRole = userDoc.role;
+        // Get the user's role from their profile in the 'users' collection
+        let userDocData = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        let userRole = userDocData.role;
         
-        let salonDoc = get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data;
-        if (userRole == 'owner' && salonDoc.ownerUid == request.auth.uid) {
+        // Get the salon document for the booking
+        let salonDocData = get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data;
+        
+        // Check if the user is the owner of the salon linked to the booking
+        if (userRole == 'owner' && salonDocData.ownerUid == request.auth.uid) {
           return true;
         }
-        // This revised staff check assumes staff members have a document in the 'staff' collection
-        // where their document ID is their Firebase Auth UID, and this document contains their 'salonId'.
+
+        // Check if the user is a staff member of the salon linked to the booking
+        // This assumes staff documents are keyed by user UID in the 'staff' collection
+        // and contain a 'salonId' field.
         if (userRole == 'staff') {
-          let staffProfile = get(/databases/$(database)/documents/staff/$(request.auth.uid)).data;
-          if (staffProfile.salonId == resource.data.salonId) {
+          // Ensure staff document exists and salonId matches
+          // Note: exists() is preferred over accessing .data directly if document might not exist
+          let staffDoc = get(/databases/$(database)/documents/staff/$(request.auth.uid));
+          if (staffDoc.exists() && staffDoc.data.salonId == resource.data.salonId) {
             return true;
           }
         }
