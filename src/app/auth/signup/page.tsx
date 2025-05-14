@@ -12,16 +12,20 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Chrome, User, Briefcase, Users } from "lucide-react";
 import Link from "next/link";
+import type { UserRole, UserData } from '@/hooks/use-auth'; // Ensure UserRole is exported
+import { useAuth } from '@/hooks/use-auth';
+
 
 export default function SignupPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { login } = useAuth();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('customer');
+  const [role, setRole] = useState<UserRole>('customer');
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,18 +38,15 @@ export default function SignupPage() {
       return;
     }
 
-    // Simulate API call or account creation logic
-    console.log("Simulating account creation with:", { firstName, lastName, email, password, role });
+    const userData: UserData = { firstName, lastName, email, role };
+    login(userData); // This will save to localStorage and navigate
 
     toast({
       title: "Account Created (Simulated)",
       description: "You've been successfully signed up! Redirecting...",
     });
 
-    // Redirect to dashboard after a short delay
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 2000);
+    // router.push('/dashboard') is handled by the login function in useAuth
   };
 
   return (
@@ -108,7 +109,7 @@ export default function SignupPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">I am a...</Label>
-            <Select value={role} onValueChange={setRole}>
+            <Select value={role || ''} onValueChange={(value) => setRole(value as UserRole)}>
               <SelectTrigger id="role" className="w-full h-12 text-base" aria-label="Select your role">
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
