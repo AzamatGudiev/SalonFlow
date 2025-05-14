@@ -12,8 +12,8 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Chrome, User, Briefcase, Users, Loader2 } from "lucide-react";
 import Link from "next/link";
-import type { UserRole } from '@/lib/schemas';
-import { auth } from '@/lib/firebase'; // Import Firebase auth instance
+import type { UserRole, UserProfile } from '@/lib/schemas';
+import { auth } from '@/lib/firebase'; 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { setUserProfile } from '@/app/actions/userActions';
 
@@ -50,7 +50,7 @@ export default function SignupPage() {
       const firebaseUser = userCredential.user;
 
       // Step 2: Create user profile in Firestore
-      const profileData = {
+      const profileData: UserProfile = {
         uid: firebaseUser.uid,
         firstName,
         lastName,
@@ -60,24 +60,22 @@ export default function SignupPage() {
       const profileResult = await setUserProfile(profileData);
 
       if (!profileResult.success) {
-        // If profile creation fails, we should ideally handle this,
-        // maybe by deleting the Firebase Auth user or marking the account for cleanup.
-        // For now, just show an error.
         console.error("Failed to create user profile in Firestore:", profileResult.error);
         toast({
           title: "Signup Partially Failed",
-          description: "Your account was created, but profile setup failed. Please contact support.",
+          description: `Account created, but profile setup failed: ${profileResult.error || 'Unknown profile error'}. Please contact support.`,
           variant: "destructive",
+          duration: 9000, 
         });
-        setIsSubmitting(false);
-        return;
+        // setIsSubmitting(false); // Handled by finally
+        return; 
       }
 
       toast({
         title: "Account Created!",
         description: "You've been successfully signed up! Redirecting to dashboard...",
       });
-      router.push('/dashboard'); // Firebase onAuthStateChanged will handle setting user state
+      // router.push('/dashboard'); // Firebase onAuthStateChanged in useAuth will handle setting user state and redirect
 
     } catch (error: any) {
       console.error("Firebase signup error:", error);
@@ -90,6 +88,8 @@ export default function SignupPage() {
         errorMessage = "The email address is not valid.";
       } else if (error.code === 'auth/configuration-not-found') {
         errorMessage = "Firebase authentication is not configured correctly. Please contact support.";
+      } else {
+        errorMessage = error.message || "Failed to sign up.";
       }
       toast({
         title: "Signup Failed",
@@ -121,6 +121,7 @@ export default function SignupPage() {
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 aria-label="First Name"
+                disabled={isSubmitting}
               />
             </div>
             <div className="space-y-2">
@@ -132,6 +133,7 @@ export default function SignupPage() {
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 aria-label="Last Name"
+                disabled={isSubmitting}
               />
             </div>
           </div>
@@ -145,6 +147,7 @@ export default function SignupPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               aria-label="Email Address"
+              disabled={isSubmitting}
             />
           </div>
           <div className="space-y-2">
@@ -157,11 +160,12 @@ export default function SignupPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               aria-label="Password"
+              disabled={isSubmitting}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="role">I am a...</Label>
-            <Select value={role || ''} onValueChange={(value) => setRole(value as UserRole)}>
+            <Select value={role || ''} onValueChange={(value) => setRole(value as UserRole)} disabled={isSubmitting}>
               <SelectTrigger id="role" className="w-full h-12 text-base" aria-label="Select your role">
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
@@ -189,7 +193,7 @@ export default function SignupPage() {
             {isSubmitting ? 'Creating Account...' : 'Create Account'}
           </Button>
           <Separator className="my-6" />
-          <Button variant="outline" className="w-full text-lg py-6" type="button" onClick={() => toast({ title: "Feature not implemented", description: "Google Sign-Up is not yet available.", variant: "default" })}>
+          <Button variant="outline" className="w-full text-lg py-6" type="button" onClick={() => toast({ title: "Feature not implemented", description: "Google Sign-Up is not yet available.", variant: "default" })} disabled={isSubmitting}>
             <Chrome className="mr-2 h-5 w-5" />
             Sign Up with Google
           </Button>
