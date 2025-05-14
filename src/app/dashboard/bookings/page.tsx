@@ -37,12 +37,15 @@ import {
   TableRow,
   TableCaption
 } from "@/components/ui/table";
-import { BookingSchema, type Booking } from '@/lib/schemas';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BookingSchema, type Booking, type StaffMember } from '@/lib/schemas';
 import { getBookings, addBooking, updateBooking, deleteBooking } from '@/app/actions/bookingActions';
+import { getStaffMembers } from '@/app/actions/staffActions';
 
 export default function BookingsPage() {
   const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
@@ -54,26 +57,31 @@ export default function BookingsPage() {
   const [service, setService] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [staff, setStaff] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState(''); // Stores ID of selected staff
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    async function fetchBookings() {
+    async function fetchInitialData() {
       setIsLoading(true);
       try {
-        const fetchedBookings = await getBookings();
+        const [fetchedBookings, fetchedStaff] = await Promise.all([
+          getBookings(),
+          getStaffMembers()
+        ]);
         setBookings(fetchedBookings);
+        setAvailableStaff(fetchedStaff);
       } catch (error) {
-        toast({ title: "Error fetching bookings", description: "Could not load bookings.", variant: "destructive" });
+        console.error("Error fetching initial data:", error);
+        toast({ title: "Error fetching data", description: "Could not load bookings or staff.", variant: "destructive" });
       } finally {
         setIsLoading(false);
       }
     }
-    fetchBookings();
+    fetchInitialData();
   }, [toast]);
 
   const resetForm = () => {
-    setCustomerName(''); setService(''); setDate(''); setTime(''); setStaff(''); setNotes('');
+    setCustomerName(''); setService(''); setDate(''); setTime(''); setSelectedStaffId(''); setNotes('');
     setCurrentBookingToEdit(null);
   };
 
@@ -86,9 +94,10 @@ export default function BookingsPage() {
     setCurrentBookingToEdit(booking);
     setCustomerName(booking.customerName);
     setService(booking.service);
-    setDate(booking.date); // Ensure date is in 'yyyy-MM-dd' for input type="date"
+    setDate(booking.date); 
     setTime(booking.time);
-    setStaff(booking.staff || '');
+    const staffMember = availableStaff.find(s => s.name === booking.staff);
+    setSelectedStaffId(staffMember ? staffMember.id : '');
     setNotes(booking.notes || '');
     setIsAddEditDialogOpen(true);
   };
@@ -97,12 +106,15 @@ export default function BookingsPage() {
     event.preventDefault();
     setIsSubmitting(true);
     
+    const staffMember = availableStaff.find(s => s.id === selectedStaffId);
+    const staffNameToSave = staffMember ? staffMember.name : undefined;
+
     const bookingDataInput = { 
         customerName, 
         service, 
         date, 
         time, 
-        staff: staff || undefined,
+        staff: staffNameToSave,
         notes: notes || undefined
     };
 
@@ -213,7 +225,7 @@ export default function BookingsPage() {
                   <TableRow key={booking.id}>
                     <TableCell className="font-medium">{booking.customerName}</TableCell>
                     <TableCell>{booking.service}</TableCell>
-                    <TableCell>{new Date(booking.date + 'T00:00:00').toLocaleDateString()}</TableCell> {/* Ensure correct date parsing */}
+                    <TableCell>{new Date(booking.date + 'T00:00:00').toLocaleDateString()}</TableCell>
                     <TableCell>{booking.time}</TableCell>
                     <TableCell>{booking.staff || 'Any'}</TableCell>
                     <TableCell className="text-right space-x-1">
@@ -273,8 +285,20 @@ export default function BookingsPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="staff">Staff Member (Optional)</Label>
-                <Input id="staff" value={staff} onChange={(e) => setStaff(e.target.value)} placeholder="e.g., Alice" aria-label="Staff Member" />
+                <Label htmlFor="staff-select">Staff Member (Optional)</Label>
+                <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                  <SelectTrigger id="staff-select" aria-label="Staff Member">
+                    <SelectValue placeholder="Select a staff member" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Any Available</SelectItem>
+                    {availableStaff.map((staffMember) => (
+                      <SelectItem key={staffMember.id} value={staffMember.id}>
+                        {staffMember.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Notes (Optional)</Label>
