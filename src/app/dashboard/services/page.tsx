@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -37,14 +37,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-interface Service {
-  id: string;
-  name: string;
-  duration: string;
-  price: string;
-  category: string;
-}
+import { ServiceSchema, type Service } from '@/lib/schemas'; // Updated import
 
 const initialServicesData: Service[] = [
   { id: "1", name: "Classic Haircut", duration: "45 min", price: "$50", category: "Hair" },
@@ -62,11 +55,10 @@ export default function ServicesPage() {
 
   // Form state for Add/Edit Dialog
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('');
-  const [duration, setDuration] = useState('');
-  const [price, setPrice] = useState('');
+  const [category, setCategoryState] = useState(''); // Renamed to avoid conflict with Service.category
+  const [duration, setDurationState] = useState(''); // Renamed
+  const [price, setPriceState] = useState(''); // Renamed
 
-  // Effect to load initial data (client-side only)
   useEffect(() => {
     setServices(initialServicesData);
   }, []);
@@ -74,9 +66,9 @@ export default function ServicesPage() {
 
   const resetForm = () => {
     setName('');
-    setCategory('');
-    setDuration('');
-    setPrice('');
+    setCategoryState('');
+    setDurationState('');
+    setPriceState('');
     setCurrentServiceToEdit(null);
   };
 
@@ -88,32 +80,39 @@ export default function ServicesPage() {
   const handleOpenEditDialog = (service: Service) => {
     setCurrentServiceToEdit(service);
     setName(service.name);
-    setCategory(service.category);
-    setDuration(service.duration);
-    setPrice(service.price);
+    setCategoryState(service.category);
+    setDurationState(service.duration);
+    setPriceState(service.price);
     setIsAddEditDialogOpen(true);
   };
 
-  const handleSaveService = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveService = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!name || !category || !duration || !price) {
-      toast({ title: "Error", description: "All fields are required.", variant: "destructive" });
+    
+    const formData = {
+      id: currentServiceToEdit?.id || String(Date.now()), // Use existing ID or generate new one
+      name,
+      category, // Uses the state variable 'category'
+      duration, // Uses the state variable 'duration'
+      price,    // Uses the state variable 'price'
+    };
+
+    const validationResult = ServiceSchema.safeParse(formData);
+
+    if (!validationResult.success) {
+      const errors = validationResult.error.errors.map(e => e.message).join(", ");
+      toast({ title: "Validation Error", description: errors, variant: "destructive" });
       return;
     }
 
-    if (currentServiceToEdit) { // Editing existing service
-      setServices(services.map(s => s.id === currentServiceToEdit.id ? { ...currentServiceToEdit, name, category, duration, price } : s));
-      toast({ title: "Service Updated", description: `"${name}" has been updated.` });
-    } else { // Adding new service
-      const newService: Service = {
-        id: String(Date.now()), // simple unique ID for prototype
-        name,
-        category,
-        duration,
-        price,
-      };
-      setServices(prevServices => [...prevServices, newService]);
-      toast({ title: "Service Added", description: `"${name}" has been added.` });
+    const validatedData = validationResult.data;
+
+    if (currentServiceToEdit) { 
+      setServices(services.map(s => s.id === currentServiceToEdit.id ? { ...s, ...validatedData } : s));
+      toast({ title: "Service Updated", description: `"${validatedData.name}" has been updated.` });
+    } else { 
+      setServices(prevServices => [...prevServices, validatedData]);
+      toast({ title: "Service Added", description: `"${validatedData.name}" has been added.` });
     }
     setIsAddEditDialogOpen(false);
     resetForm();
@@ -205,7 +204,10 @@ export default function ServicesPage() {
       </Card>
 
       {/* Add/Edit Service Dialog */}
-      <Dialog open={isAddEditDialogOpen} onOpenChange={setIsAddEditDialogOpen}>
+      <Dialog open={isAddEditDialogOpen} onOpenChange={(isOpen) => {
+        setIsAddEditDialogOpen(isOpen);
+        if (!isOpen) resetForm();
+      }}>
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleSaveService}>
             <DialogHeader>
@@ -217,25 +219,23 @@ export default function ServicesPage() {
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="service-name" className="text-right">Name</Label>
-                <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" required aria-label="Service Name"/>
+                <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} className="col-span-3" aria-label="Service Name"/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="service-category" className="text-right">Category</Label>
-                <Input id="service-category" value={category} onChange={(e) => setCategory(e.target.value)} className="col-span-3" required aria-label="Service Category"/>
+                <Input id="service-category" value={category} onChange={(e) => setCategoryState(e.target.value)} className="col-span-3" aria-label="Service Category"/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="service-duration" className="text-right">Duration</Label>
-                <Input id="service-duration" value={duration} onChange={(e) => setDuration(e.target.value)} className="col-span-3" placeholder="e.g., 30 min" required aria-label="Service Duration"/>
+                <Input id="service-duration" value={duration} onChange={(e) => setDurationState(e.target.value)} className="col-span-3" placeholder="e.g., 30 min" aria-label="Service Duration"/>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="service-price" className="text-right">Price</Label>
-                <Input id="service-price" value={price} onChange={(e) => setPrice(e.target.value)} className="col-span-3" placeholder="e.g., $50" required aria-label="Service Price"/>
+                <Input id="service-price" value={price} onChange={(e) => setPriceState(e.target.value)} className="col-span-3" placeholder="e.g., $50" aria-label="Service Price"/>
               </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
-              </DialogClose>
+              <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
               <Button type="submit">Save Service</Button>
             </DialogFooter>
           </form>
