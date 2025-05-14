@@ -9,33 +9,45 @@ import {
   addDoc, 
   doc, 
   updateDoc, 
-  deleteDoc 
+  deleteDoc,
+  query,
+  where
 } from 'firebase/firestore';
 import { z } from 'zod';
 
 const BOOKINGS_COLLECTION = 'bookings';
 
-export async function getBookings(): Promise<Booking[]> {
+export async function getBookings(filters?: { salonId?: string; customerEmail?: string }): Promise<Booking[]> {
   if (!db) {
     console.error("Firestore database is not initialized (getBookings).");
     return [];
   }
   try {
-    const bookingsCollectionRef = collection(db, BOOKINGS_COLLECTION);
-    const querySnapshot = await getDocs(bookingsCollectionRef);
+    let bookingsQuery = query(collection(db, BOOKINGS_COLLECTION));
+
+    if (filters?.salonId) {
+      bookingsQuery = query(bookingsQuery, where("salonId", "==", filters.salonId));
+    }
+    if (filters?.customerEmail) {
+      bookingsQuery = query(bookingsQuery, where("customerEmail", "==", filters.customerEmail));
+    }
+    // Add orderBy date if needed, e.g., orderBy("date", "desc")
+
+    const querySnapshot = await getDocs(bookingsQuery);
     const bookings: Booking[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      const booking = BookingSchema.safeParse({ ...data, id: doc.id });
+    querySnapshot.forEach((document) => {
+      const data = document.data();
+      const booking = BookingSchema.safeParse({ ...data, id: document.id });
       if (booking.success) {
         bookings.push(booking.data);
       } else {
-        console.warn("Fetched booking data is invalid:", booking.error.flatten().fieldErrors, "Document ID:", doc.id);
+        console.warn("Fetched booking data is invalid:", booking.error.flatten().fieldErrors, "Document ID:", document.id);
       }
     });
     return bookings;
   } catch (error) {
     console.error("Error fetching bookings from Firestore:", error);
+    // In a real app, you might want to throw the error or return an error object
     return [];
   }
 }
@@ -48,7 +60,7 @@ export async function addBooking(data: Omit<Booking, 'id'>): Promise<{ success: 
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
     console.error("Validation errors (addBooking):", errorMessages);
-    return { success: false, error: errorMessages };
+    return { success: false, error: `Invalid data: ${errorMessages}` };
   }
 
   try {
@@ -61,7 +73,7 @@ export async function addBooking(data: Omit<Booking, 'id'>): Promise<{ success: 
     return { success: true, booking: newBooking };
   } catch (error) {
     console.error("Error adding booking to Firestore:", error);
-    return { success: false, error: "Failed to add booking to database." };
+    return { success: false, error: "Failed to add booking to the database. Please try again." };
   }
 }
 
@@ -73,7 +85,7 @@ export async function updateBooking(data: Booking): Promise<{ success: boolean; 
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
     console.error("Validation errors (updateBooking):", errorMessages);
-    return { success: false, error: errorMessages };
+    return { success: false, error: `Invalid data: ${errorMessages}` };
   }
 
   try {
@@ -84,7 +96,7 @@ export async function updateBooking(data: Booking): Promise<{ success: boolean; 
     return { success: true, booking: validationResult.data };
   } catch (error) {
     console.error("Error updating booking in Firestore:", error);
-    return { success: false, error: "Failed to update booking in database." };
+    return { success: false, error: "Failed to update booking in the database. Please try again." };
   }
 }
 
@@ -102,6 +114,6 @@ export async function deleteBooking(id: string): Promise<{ success: boolean; err
     return { success: true };
   } catch (error) {
     console.error("Error deleting booking from Firestore:", error);
-    return { success: false, error: "Failed to delete booking from database." };
+    return { success: false, error: "Failed to delete booking from the database. Please try again." };
   }
 }

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -14,8 +14,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Save, Building, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import type { Salon } from '@/lib/schemas';
-import { SalonSchema } from '@/lib/schemas'; // For validation
-import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions'; // Using getSalons to check for existing
+import { SalonSchema } from '@/lib/schemas';
+import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
@@ -38,53 +38,46 @@ const DEFAULT_AMENITIES = [
   "Online Booking", "Walk-ins Welcome", "Gender-Neutral Restrooms", "Background Music", "Magazines/Reading Material"
 ];
 
-// Key for localStorage to store the owner's salon ID.
 const OWNER_SALON_ID_LOCAL_STORAGE_KEY = 'owner_salon_id_';
 
 export default function MySalonPage() {
-  const { user, role, isLoading: authLoading } = useAuth();
+  const { user, role, isLoading: authLoading, isLoggedIn } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const [salonDetails, setSalonDetails] = useState<Partial<Salon>>({
-    name: '',
-    location: '',
-    description: '',
-    services: [],
-    operatingHours: [],
-    amenities: [],
-    image: '',
-    rating: 0,
-    aiHint: '',
-    ownerUid: user?.firebaseUid || '', // Initialize with current user's UID
+    name: '', location: '', description: '', services: [], operatingHours: [], amenities: [],
+    image: '', rating: 0, aiHint: '', ownerUid: user?.firebaseUid || '',
   });
-  const [salonIdToUpdate, setSalonIdToUpdate] = useState<string | null>(null); // To store existing salon ID for updates
+  const [salonIdToUpdate, setSalonIdToUpdate] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // State for checkbox selections
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedOperatingHours, setSelectedOperatingHours] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
-  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY}${user.firebaseUid}` : null;
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
-    if (!authLoading && role !== 'owner') {
+    if (!authLoading && !isLoggedIn) {
+      router.push('/auth/login');
+      return;
+    }
+    if (!authLoading && isLoggedIn && role !== 'owner') {
       toast({ title: "Access Denied", description: "You must be a salon owner to access this page.", variant: "destructive" });
       router.push('/dashboard');
       return;
     }
-
+  }, [authLoading, isLoggedIn, role, router, toast]);
+  
+  useEffect(() => {
     if (role === 'owner' && user) {
-      setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid })); // Ensure ownerUid is set if user loads
+      setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid }));
       setIsLoadingData(true);
       const ownerSalonIdKey = getOwnerSalonIdKey();
-      const storedSalonId = ownerSalonIdKey ? localStorage.getItem(ownerSalonIdKey) : null;
       
-      // Attempt to fetch existing salon for this owner from Firestore directly
-      // This makes localStorage just a hint or fallback.
-      getSalons().then(allSalons => { // A more robust way would be a getSalonByOwnerUid action
+      getSalons().then(allSalons => {
         const ownerSalon = allSalons.find(s => s.ownerUid === user.firebaseUid);
         if (ownerSalon) {
           setSalonDetails(ownerSalon);
@@ -92,23 +85,19 @@ export default function MySalonPage() {
           setSelectedServices(ownerSalon.services || []);
           setSelectedOperatingHours(ownerSalon.operatingHours || []);
           setSelectedAmenities(ownerSalon.amenities || []);
-          if (ownerSalonIdKey && !storedSalonId) { // Sync localStorage if not set
-            localStorage.setItem(ownerSalonIdKey, ownerSalon.id);
-          }
-        } else if (storedSalonId) {
-            // If not found by ownerUid but was in localStorage, clear it as it might be stale.
-            localStorage.removeItem(storedSalonId);
+          if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, ownerSalon.id); }
+        } else if (ownerSalonIdKey) {
+           localStorage.removeItem(ownerSalonIdKey); // Clear if no salon found for this owner
+           setSalonIdToUpdate(null); // Reset edit state
         }
       }).catch(err => {
         console.error("Error fetching salon details:", err);
         toast({ title: "Error", description: "Could not fetch your salon details.", variant: "destructive" });
       }).finally(() => setIsLoadingData(false));
-
     } else if (!user && !authLoading) {
       router.push('/auth/login');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, role, user, router]);
+  }, [authLoading, role, user, router, toast, getOwnerSalonIdKey]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -116,15 +105,9 @@ export default function MySalonPage() {
   };
 
   const handleCheckboxChange = (
-    value: string,
-    currentSelectedArray: string[],
-    setter: React.Dispatch<React.SetStateAction<string[]>>
+    value: string, currentSelectedArray: string[], setter: React.Dispatch<React.SetStateAction<string[]>>
   ) => {
-    if (currentSelectedArray.includes(value)) {
-      setter(currentSelectedArray.filter(item => item !== value));
-    } else {
-      setter([...currentSelectedArray, value]);
-    }
+    setter(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value]);
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -141,44 +124,21 @@ export default function MySalonPage() {
 
     const finalSalonData: Partial<Salon> = {
       ...salonDetails,
-      ownerUid: user.firebaseUid, // Ensure ownerUid is set from the authenticated user
-      name: salonDetails.name || 'My Salon', // Default if empty
-      location: salonDetails.location || 'Default Location', // Default if empty
-      services: selectedServices,
-      operatingHours: selectedOperatingHours,
-      amenities: selectedAmenities,
-      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Random rating 3.5-5.0
+      ownerUid: user.firebaseUid, name: salonDetails.name || 'My Salon',
+      location: salonDetails.location || 'Default Location', services: selectedServices,
+      operatingHours: selectedOperatingHours, amenities: selectedAmenities,
+      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)),
       image: salonDetails.image || `https://placehold.co/1200x800.png`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
     
     let result;
-    if (salonIdToUpdate) { // If updating an existing salon
+    if (salonIdToUpdate) {
       const dataToUpdate: Salon = { ...finalSalonData, id: salonIdToUpdate } as Salon;
-      const validationResult = SalonSchema.safeParse(dataToUpdate);
-      if (!validationResult.success) {
-        const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
-        toast({ title: "Validation Error", description: errorMessages, variant: "destructive" });
-        setIsSubmitting(false);
-        return;
-      }
-      result = await updateSalon(validationResult.data);
-    } else { // If creating a new salon
-      // Explicitly cast to ensure ownerUid is present as per Omit<Salon, 'id'>
+      result = await updateSalon(dataToUpdate);
+    } else {
       const dataToAdd: Omit<Salon, 'id'> = finalSalonData as Omit<Salon, 'id'>;
-       if (!dataToAdd.ownerUid) { // Final check, though user.firebaseUid should cover this
-          toast({ title: "Error", description: "Owner information is missing.", variant: "destructive" });
-          setIsSubmitting(false);
-          return;
-       }
-      const validationResult = SalonSchema.omit({ id: true }).safeParse(dataToAdd);
-      if (!validationResult.success) {
-        const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
-        toast({ title: "Validation Error", description: errorMessages, variant: "destructive" });
-        setIsSubmitting(false);
-        return;
-      }
-      result = await addSalon(validationResult.data);
+      result = await addSalon(dataToAdd);
     }
 
     if (result.success && result.salon) {
@@ -188,11 +148,8 @@ export default function MySalonPage() {
       setSelectedServices(result.salon.services || []);
       setSelectedOperatingHours(result.salon.operatingHours || []);
       setSelectedAmenities(result.salon.amenities || []);
-      
       const ownerSalonIdKey = getOwnerSalonIdKey();
-      if (ownerSalonIdKey) {
-        localStorage.setItem(ownerSalonIdKey, result.salon.id);
-      }
+      if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, result.salon.id); }
     } else {
       toast({ title: "Error", description: result.error || "Could not save salon details.", variant: "destructive" });
     }
@@ -206,9 +163,6 @@ export default function MySalonPage() {
       </div>
     );
   }
-  if (role !== 'owner') {
-     return <div className="container mx-auto p-8">Access Denied. Redirecting...</div>;
-  }
 
   return (
     <div className="container mx-auto py-12 px-4">
@@ -221,117 +175,59 @@ export default function MySalonPage() {
             {salonIdToUpdate ? 'Update your salon\'s information that customers will see.' : 'Showcase your salon on SalonFlow to attract bookings.'}
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href="/dashboard">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Link>
-        </Button>
+        <Button asChild variant="outline"> <Link href="/dashboard"> <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard </Link> </Button>
       </header>
 
       <Card className="max-w-3xl mx-auto shadow-xl">
-        <CardHeader>
-          <CardTitle>Salon Information</CardTitle>
-          <CardDescription>Fill in the details below. Fields marked with * are essential.</CardDescription>
-        </CardHeader>
+        <CardHeader> <CardTitle>Salon Information</CardTitle> <CardDescription>Fill in the details below. Fields marked with * are essential.</CardDescription> </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="name">Salon Name *</Label>
-              <Input id="name" name="name" value={salonDetails.name || ''} onChange={handleChange} placeholder="e.g., The Glamour Spot" required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="location">Location / Address *</Label>
-              <Input id="location" name="location" value={salonDetails.location || ''} onChange={handleChange} placeholder="e.g., 123 Beauty Ave, Anytown" required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea id="description" name="description" value={salonDetails.description || ''} onChange={handleChange} placeholder="Tell customers about your salon, its atmosphere, and unique qualities." className="min-h-[100px]" />
-            </div>
-            
+            <div className="space-y-2"> <Label htmlFor="name">Salon Name *</Label> <Input id="name" name="name" value={salonDetails.name || ''} onChange={handleChange} placeholder="e.g., The Glamour Spot" required /> </div>
+            <div className="space-y-2"> <Label htmlFor="location">Location / Address *</Label> <Input id="location" name="location" value={salonDetails.location || ''} onChange={handleChange} placeholder="e.g., 123 Beauty Ave, Anytown" required /> </div>
+            <div className="space-y-2"> <Label htmlFor="description">Description</Label> <Textarea id="description" name="description" value={salonDetails.description || ''} onChange={handleChange} placeholder="Tell customers about your salon, its atmosphere, and unique qualities." className="min-h-[100px]" /> </div>
             <Separator className="my-4" />
-
-            <div className="space-y-2">
-              <Label htmlFor="image">Main Image URL</Label>
-              <Input id="image" name="image" value={salonDetails.image || ''} onChange={handleChange} placeholder="https://placehold.co/1200x800.png" />
-              <p className="text-xs text-muted-foreground">A captivating image of your salon. Uses a default placeholder if empty.</p>
-            </div>
-             <div className="space-y-2">
-              <Label htmlFor="aiHint">Image AI Hint (1-2 words for placeholder image)</Label>
-              <Input id="aiHint" name="aiHint" value={salonDetails.aiHint || ''} onChange={handleChange} placeholder="e.g., modern salon" />
-              <p className="text-xs text-muted-foreground">Helps generate a relevant placeholder image if no URL is provided. E.g., "luxury spa", "barber shop".</p>
-            </div>
-
+            <div className="space-y-2"> <Label htmlFor="image">Main Image URL</Label> <Input id="image" name="image" value={salonDetails.image || ''} onChange={handleChange} placeholder="https://placehold.co/1200x800.png" /> <p className="text-xs text-muted-foreground">A captivating image of your salon. Uses a default placeholder if empty.</p> </div>
+            <div className="space-y-2"> <Label htmlFor="aiHint">Image AI Hint (1-2 words for placeholder image)</Label> <Input id="aiHint" name="aiHint" value={salonDetails.aiHint || ''} onChange={handleChange} placeholder="e.g., modern salon" /> <p className="text-xs text-muted-foreground">Helps generate a relevant placeholder image if no URL is provided. E.g., "luxury spa", "barber shop".</p> </div>
             <Separator className="my-4" />
-
-            <div className="space-y-2">
-              <Label>Service Categories Offered *</Label>
+            <div className="space-y-2"> <Label>Service Categories Offered *</Label>
               <ScrollArea className="h-48 w-full rounded-md border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {DEFAULT_SERVICES.map(service => (
                     <div key={service} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`service-${service.replace(/\s+/g, '-')}`}
-                        checked={selectedServices.includes(service)}
-                        onCheckedChange={() => handleCheckboxChange(service, selectedServices, setSelectedServices)}
-                        aria-label={service}
-                      />
-                      <Label htmlFor={`service-${service.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
-                        {service}
-                      </Label>
+                      <Checkbox id={`service-${service.replace(/\s+/g, '-')}`} checked={selectedServices.includes(service)} onCheckedChange={() => handleCheckboxChange(service, selectedServices, setSelectedServices)} aria-label={service} />
+                      <Label htmlFor={`service-${service.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer"> {service} </Label>
                     </div>
                   ))}
                 </div>
               </ScrollArea>
-               {selectedServices.length === 0 && <p className="text-xs text-destructive">Please select at least one service category your salon offers.</p>}
+              {selectedServices.length === 0 && <p className="text-xs text-destructive">Please select at least one service category your salon offers.</p>}
             </div>
-            
             <Separator className="my-4" />
-
-            <div className="space-y-2">
-              <Label>Operating Hours</Label>
-               <ScrollArea className="h-48 w-full rounded-md border p-4">
+            <div className="space-y-2"> <Label>Operating Hours</Label>
+              <ScrollArea className="h-48 w-full rounded-md border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {DEFAULT_OPERATING_HOURS.map(hours => (
                     <div key={hours} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`hours-${hours.replace(/\s+/g, '-')}`}
-                        checked={selectedOperatingHours.includes(hours)}
-                        onCheckedChange={() => handleCheckboxChange(hours, selectedOperatingHours, setSelectedOperatingHours)}
-                        aria-label={hours}
-                      />
-                      <Label htmlFor={`hours-${hours.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
-                        {hours}
-                      </Label>
+                      <Checkbox id={`hours-${hours.replace(/\s+/g, '-')}`} checked={selectedOperatingHours.includes(hours)} onCheckedChange={() => handleCheckboxChange(hours, selectedOperatingHours, setSelectedOperatingHours)} aria-label={hours} />
+                      <Label htmlFor={`hours-${hours.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer"> {hours} </Label>
                     </div>
                   ))}
                 </div>
               </ScrollArea>
             </div>
-
             <Separator className="my-4" />
-
-             <div className="space-y-2">
-              <Label>Amenities</Label>
+            <div className="space-y-2"> <Label>Amenities</Label>
               <ScrollArea className="h-48 w-full rounded-md border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {DEFAULT_AMENITIES.map(amenity => (
                     <div key={amenity} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`amenity-${amenity.replace(/\s+/g, '-')}`}
-                        checked={selectedAmenities.includes(amenity)}
-                        onCheckedChange={() => handleCheckboxChange(amenity, selectedAmenities, setSelectedAmenities)}
-                        aria-label={amenity}
-                      />
-                      <Label htmlFor={`amenity-${amenity.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
-                        {amenity}
-                      </Label>
+                      <Checkbox id={`amenity-${amenity.replace(/\s+/g, '-')}`} checked={selectedAmenities.includes(amenity)} onCheckedChange={() => handleCheckboxChange(amenity, selectedAmenities, setSelectedAmenities)} aria-label={amenity} />
+                      <Label htmlFor={`amenity-${amenity.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer"> {amenity} </Label>
                     </div>
                   ))}
                 </div>
               </ScrollArea>
             </div>
-
             <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || selectedServices.length === 0}>
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
               {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create My Salon')}
