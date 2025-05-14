@@ -10,26 +10,27 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Chrome, User, Briefcase, Users } from "lucide-react";
+import { Chrome, User, Briefcase, Users, Loader2 } from "lucide-react";
 import Link from "next/link";
-import type { UserRole, UserData } from '@/hooks/use-auth'; // Ensure UserRole is exported
-import { useAuth } from '@/hooks/use-auth';
-
+import type { UserRole } from '@/lib/schemas';
+import { auth } from '@/lib/firebase'; // Import Firebase auth instance
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { setUserProfile } from '@/app/actions/userActions';
 
 export default function SignupPage() {
   const router = useRouter();
   const { toast } = useToast();
-  const { login } = useAuth();
-
+  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('customer');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !role) {
       toast({
         title: "Error",
         description: "Please fill in all required fields.",
@@ -37,16 +38,65 @@ export default function SignupPage() {
       });
       return;
     }
+    if (!auth) {
+      toast({ title: "Error", description: "Authentication service is not available. Please try again later.", variant: "destructive" });
+      return;
+    }
 
-    const userData: UserData = { firstName, lastName, email, role };
-    login(userData); // This will save to localStorage and navigate
+    setIsSubmitting(true);
+    try {
+      // Step 1: Create user in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
 
-    toast({
-      title: "Account Created (Simulated)",
-      description: "You've been successfully signed up! Redirecting...",
-    });
+      // Step 2: Create user profile in Firestore
+      const profileData = {
+        uid: firebaseUser.uid,
+        firstName,
+        lastName,
+        email: firebaseUser.email || email, // Use email from Firebase Auth if available
+        role,
+      };
+      const profileResult = await setUserProfile(profileData);
 
-    // router.push('/dashboard') is handled by the login function in useAuth
+      if (!profileResult.success) {
+        // If profile creation fails, we should ideally handle this,
+        // maybe by deleting the Firebase Auth user or marking the account for cleanup.
+        // For now, just show an error.
+        console.error("Failed to create user profile in Firestore:", profileResult.error);
+        toast({
+          title: "Signup Partially Failed",
+          description: "Your account was created, but profile setup failed. Please contact support.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      toast({
+        title: "Account Created!",
+        description: "You've been successfully signed up! Redirecting to dashboard...",
+      });
+      router.push('/dashboard'); // Firebase onAuthStateChanged will handle setting user state
+
+    } catch (error: any) {
+      console.error("Firebase signup error:", error);
+      let errorMessage = "An unknown error occurred during signup.";
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "This email address is already in use. Please try another.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "The password is too weak. Please choose a stronger password.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "The email address is not valid.";
+      }
+      toast({
+        title: "Signup Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -100,7 +150,7 @@ export default function SignupPage() {
             <Input
               id="password"
               type="password"
-              placeholder="••••••••"
+              placeholder="•••••••• (min. 6 characters)"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -132,8 +182,9 @@ export default function SignupPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit" className="w-full text-lg py-6">
-            Create Account
+          <Button type="submit" className="w-full text-lg py-6" disabled={isSubmitting}>
+            {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+            {isSubmitting ? 'Creating Account...' : 'Create Account'}
           </Button>
           <Separator className="my-6" />
           <Button variant="outline" className="w-full text-lg py-6" type="button" onClick={() => toast({ title: "Feature not implemented", description: "Google Sign-Up is not yet available.", variant: "default" })}>
