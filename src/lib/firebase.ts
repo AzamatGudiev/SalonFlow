@@ -24,7 +24,7 @@ if (!apiKey || !projectId) {
     "Firebase services will not be available."
   );
 } else {
-  // All essential configurations seem to be present (as strings)
+  // All essential configurations seem to be present
   const firebaseConfig = {
     apiKey,
     authDomain,
@@ -35,38 +35,32 @@ if (!apiKey || !projectId) {
     measurementId,
   };
 
-  if (typeof window !== "undefined") { // Ensure Firebase is initialized only on the client-side for Next.js if not using App Router with server components that need it
-    if (getApps().length === 0) {
-      try {
-        app = initializeApp(firebaseConfig);
-        console.log("Firebase app initialized successfully on the client.");
-      } catch (error) {
-        console.error("Firebase client-side initialization failed:", error);
-        // app remains undefined
-      }
-    } else {
-      app = getApp(); // Use the existing initialized app
-      console.log("Using existing Firebase app instance on the client.");
+  // Initialize Firebase universally (works for client and server components/actions)
+  if (getApps().length === 0) {
+    try {
+      app = initializeApp(firebaseConfig);
+      console.log("Firebase app initialized successfully.");
+    } catch (error) {
+      console.error("Firebase initialization failed:", error);
+      // app remains undefined
     }
   } else {
-    // Handling for server-side initialization if ever needed, though typically client-side for web apps.
-    // For Next.js App Router, direct server-side initialization might be less common for client SDKs.
-    // If you were using Firebase Admin SDK on the server, this part would be different.
-    console.warn("Firebase SDK initialization is primarily for client-side. Server-side initialization (if intended) would require a different approach (e.g., Firebase Admin SDK).");
+    app = getApp(); // Use the existing initialized app
+    console.log("Using existing Firebase app instance.");
   }
-
 
   if (app) {
     try {
-      auth = getAuth(app);
-      db = getFirestore(app);
+      auth = getAuth(app); // Obtain Auth instance
+      db = getFirestore(app); // Obtain Firestore instance
       console.log("Firebase Auth and Firestore services obtained.");
     } catch (serviceError) {
       console.error("Failed to obtain Firebase Auth/Firestore services:", serviceError);
       // auth and db might remain undefined or throw during getAuth/getFirestore
     }
   } else {
-    if (apiKey && projectId) { // Only warn if config was present but app still not initialized
+    // This warning will now primarily trigger if initializeApp failed even with config present.
+    if (apiKey && projectId) { 
         console.warn("Firebase app instance is not available even though config was provided. Auth and Firestore cannot be initialized.");
     }
   }
