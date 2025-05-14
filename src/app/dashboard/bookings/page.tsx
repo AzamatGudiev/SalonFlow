@@ -1,10 +1,22 @@
 
+'use client'; // Required for useToast
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, PlusCircle } from "lucide-react";
 import Link from "next/link";
+import { useToast } from "@/hooks/use-toast"; // Import useToast
 
 export default function BookingsPage() {
+  const { toast } = useToast(); // Initialize useToast
+
+  const handleAddNewBooking = () => {
+    toast({
+      title: "Feature In Progress",
+      description: "Adding a new booking functionality is not yet implemented in this prototype.",
+    });
+  };
+
   return (
     <div className="container mx-auto py-12 px-4">
       <header className="mb-10 flex items-center justify-between">
@@ -28,7 +40,7 @@ export default function BookingsPage() {
             <CardTitle>Upcoming Bookings</CardTitle>
             <CardDescription>A list of scheduled appointments.</CardDescription>
           </div>
-          <Button>
+          <Button onClick={handleAddNewBooking}> {/* Add onClick handler */}
             <PlusCircle className="mr-2 h-4 w-4" />
             Add New Booking
           </Button>

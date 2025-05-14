@@ -1,8 +1,12 @@
+
+'use client'; // Required for useToast
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, MapPin, Star } from "lucide-react";
 import Image from "next/image";
+import { useToast } from "@/hooks/use-toast"; // Import useToast
 
 const mockSalons = [
   { id: '1', name: 'Chic & Sleek Salon', location: '123 Beauty Ave, Glamour City', rating: 4.8, services: ['Haircut', 'Coloring', 'Styling'], image: 'https://placehold.co/600x400.png', aiHint: 'modern salon' },
@@ -13,6 +17,26 @@ const mockSalons = [
 
 
 export default function SalonsPage() {
+  const { toast } = useToast(); // Initialize useToast
+
+  const handleViewDetails = (salonName: string) => {
+    toast({
+      title: "Coming Soon!",
+      description: `The detailed page and booking for "${salonName}" is currently under construction.`,
+    });
+  };
+  
+  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const searchQuery = formData.get("search") as string;
+    toast({
+        title: "Search Submitted (Simulated)",
+        description: `You searched for: "${searchQuery}". Search functionality is not fully implemented yet.`,
+    });
+  };
+
+
   return (
     <div className="container mx-auto py-12 px-4">
       <header className="mb-12 text-center">
@@ -22,17 +46,19 @@ export default function SalonsPage() {
         </p>
       </header>
 
-      <div className="mb-8 max-w-2xl mx-auto">
+      <form className="mb-8 max-w-2xl mx-auto" onSubmit={handleSearch}>
         <div className="relative">
           <Input
             type="search"
+            name="search"
             placeholder="Search by salon name, service, or location..."
             className="pl-10 pr-4 py-3 text-base h-12 rounded-full shadow-sm"
+            aria-label="Search salons"
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         </div>
-        {/* Add filter options here later, e.g., by service type, rating, price range */}
-      </div>
+         {/* <Button type="submit" className="sr-only">Submit Search</Button> Hidden submit, search on enter */}
+      </form>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {mockSalons.map((salon) => (
@@ -62,13 +88,13 @@ export default function SalonsPage() {
                 <h4 className="text-sm font-medium text-foreground mb-1.5">Popular Services:</h4>
                 <div className="flex flex-wrap gap-2">
                   {salon.services.slice(0, 3).map(service => (
-                    <span key={service} className="text-xs bg-accent/20 text-accent-foreground px-2 py-1 rounded-full">{service}</span>
+                    <span key={service} className="text-xs bg-accent/20 text-primary px-2 py-1 rounded-full">{service}</span>
                   ))}
                 </div>
               </div>
             </CardContent>
             <div className="p-6 pt-0">
-               <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+               <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => handleViewDetails(salon.name)}> {/* Add onClick handler */}
                 View Details & Book
               </Button>
             </div>

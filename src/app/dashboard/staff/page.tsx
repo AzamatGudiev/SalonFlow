@@ -1,9 +1,12 @@
 
+'use client'; // Required for useToast
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlusCircle, UserPlus, Edit, Trash2 } from "lucide-react";
+import { ArrowLeft, UserPlus, Edit, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast"; // Import useToast
 
 const mockStaff = [
   { id: "1", name: "Alice Wonderland", role: "Stylist", email: "alice@example.com", avatar: "https://placehold.co/100x100.png", initials: "AW", aiHint: "woman portrait" },
@@ -12,6 +15,30 @@ const mockStaff = [
 ];
 
 export default function StaffPage() {
+  const { toast } = useToast(); // Initialize useToast
+
+  const handleAddStaff = () => {
+    toast({
+      title: "Feature In Progress",
+      description: "Adding a new staff member is not yet implemented in this prototype.",
+    });
+  };
+
+  const handleEditStaff = (staffName: string) => {
+    toast({
+      title: "Feature In Progress",
+      description: `Editing functionality for "${staffName}" is not yet implemented.`,
+    });
+  };
+
+  const handleDeleteStaff = (staffName: string) => {
+    toast({
+      title: "Action Simulated",
+      description: `In a real app, "${staffName}" would be removed. This is a prototype.`,
+      variant: "destructive",
+    });
+  };
+
   return (
     <div className="container mx-auto py-12 px-4">
       <header className="mb-10 flex items-center justify-between">
@@ -35,7 +62,7 @@ export default function StaffPage() {
             <CardTitle>Salon Staff</CardTitle>
             <CardDescription>List of all staff members.</CardDescription>
           </div>
-          <Button>
+          <Button onClick={handleAddStaff}> {/* Add onClick handler */}
             <UserPlus className="mr-2 h-4 w-4" />
             Add New Staff
           </Button>
@@ -60,10 +87,10 @@ export default function StaffPage() {
                     {/* Placeholder for more staff details like schedule, services etc. */}
                   </CardContent>
                   <div className="p-4 pt-0 flex justify-end gap-2 border-t mt-4">
-                     <Button variant="ghost" size="sm">
+                     <Button variant="ghost" size="sm" onClick={() => handleEditStaff(staff.name)}> {/* Add onClick handler */}
                         <Edit className="mr-2 h-4 w-4" /> Edit
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteStaff(staff.name)}> {/* Add onClick handler */}
                         <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </Button>
                   </div>
