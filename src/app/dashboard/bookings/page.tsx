@@ -14,7 +14,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogClose,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -39,18 +38,13 @@ import {
   TableCaption
 } from "@/components/ui/table";
 import { BookingSchema, type Booking } from '@/lib/schemas';
-
-
-const initialBookingsData: Booking[] = [
-  { id: "1", customerName: "John Doe", service: "Classic Haircut", date: "2024-08-15", time: "10:00", staff: "Alice Wonderland", notes: "Prefers minimal chat." },
-  { id: "2", customerName: "Jane Smith", service: "Manicure", date: "2024-08-16", time: "14:30", staff: "Carol Danvers" },
-  { id: "3", customerName: "Mike Johnson", service: "Deep Tissue Massage", date: "2024-08-18", time: "11:00", notes: "Focus on shoulder area." },
-];
-
+import { getBookings, addBooking, updateBooking, deleteBooking } from '@/app/actions/bookingActions';
 
 export default function BookingsPage() {
   const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [currentBookingToEdit, setCurrentBookingToEdit] = useState<Booking | null>(null);
   const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null);
@@ -64,8 +58,19 @@ export default function BookingsPage() {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    setBookings(initialBookingsData);
-  }, []);
+    async function fetchBookings() {
+      setIsLoading(true);
+      try {
+        const fetchedBookings = await getBookings();
+        setBookings(fetchedBookings);
+      } catch (error) {
+        toast({ title: "Error fetching bookings", description: "Could not load bookings.", variant: "destructive" });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchBookings();
+  }, [toast]);
 
   const resetForm = () => {
     setCustomerName(''); setService(''); setDate(''); setTime(''); setStaff(''); setNotes('');
@@ -81,43 +86,55 @@ export default function BookingsPage() {
     setCurrentBookingToEdit(booking);
     setCustomerName(booking.customerName);
     setService(booking.service);
-    setDate(booking.date);
+    setDate(booking.date); // Ensure date is in 'yyyy-MM-dd' for input type="date"
     setTime(booking.time);
     setStaff(booking.staff || '');
     setNotes(booking.notes || '');
     setIsAddEditDialogOpen(true);
   };
 
-  const handleSaveBooking = (event: FormEvent<HTMLFormElement>) => {
+  const handleSaveBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setIsSubmitting(true);
     
     const bookingDataInput = { 
-        id: currentBookingToEdit?.id || String(Date.now()),
         customerName, 
         service, 
         date, 
         time, 
-        staff: staff || undefined, // Pass as undefined if empty for Zod optional
-        notes: notes || undefined  // Pass as undefined if empty for Zod optional
+        staff: staff || undefined,
+        notes: notes || undefined
     };
 
-    const validationResult = BookingSchema.safeParse(bookingDataInput);
+    const clientValidation = currentBookingToEdit
+      ? BookingSchema.safeParse({ ...bookingDataInput, id: currentBookingToEdit.id })
+      : BookingSchema.omit({id: true}).safeParse(bookingDataInput);
 
-    if (!validationResult.success) {
-      const errors = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(", ");
+    if (!clientValidation.success) {
+      const errors = clientValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(", ");
       toast({ title: "Validation Error", description: errors, variant: "destructive" });
+      setIsSubmitting(false);
       return;
     }
 
-    const validatedData = validationResult.data;
-
     if (currentBookingToEdit) {
-      setBookings(bookings.map(b => b.id === currentBookingToEdit.id ? { ...currentBookingToEdit, ...validatedData } : b));
-      toast({ title: "Booking Updated", description: `Booking for ${validatedData.customerName} updated.` });
+      const result = await updateBooking({ ...clientValidation.data, id: currentBookingToEdit.id });
+      if (result.success && result.booking) {
+        setBookings(prev => prev.map(b => b.id === result.booking!.id ? result.booking! : b));
+        toast({ title: "Booking Updated", description: `Booking for ${result.booking.customerName} updated.` });
+      } else {
+        toast({ title: "Update Failed", description: result.error || "Could not update booking.", variant: "destructive" });
+      }
     } else {
-      setBookings(prev => [validatedData, ...prev]); 
-      toast({ title: "Booking Added", description: `New booking for ${validatedData.customerName} created.` });
+      const result = await addBooking(clientValidation.data);
+      if (result.success && result.booking) {
+        setBookings(prev => [result.booking!, ...prev]); 
+        toast({ title: "Booking Added", description: `New booking for ${result.booking.customerName} created.` });
+      } else {
+        toast({ title: "Add Failed", description: result.error || "Could not add booking.", variant: "destructive" });
+      }
     }
+    setIsSubmitting(false);
     setIsAddEditDialogOpen(false);
     resetForm();
   };
@@ -126,19 +143,26 @@ export default function BookingsPage() {
     setBookingToDelete(booking);
   };
 
-  const confirmDeleteBooking = () => {
+  const confirmDeleteBooking = async () => {
     if (bookingToDelete) {
-      setBookings(bookings.filter(b => b.id !== bookingToDelete.id));
-      toast({ title: "Booking Deleted", description: `Booking for ${bookingToDelete.customerName} deleted.`, variant: "destructive" });
+      setIsSubmitting(true);
+      const result = await deleteBooking(bookingToDelete.id);
+      setIsSubmitting(false);
+      if (result.success) {
+        setBookings(bookings.filter(b => b.id !== bookingToDelete.id));
+        toast({ title: "Booking Deleted", description: `Booking for ${bookingToDelete.customerName} deleted.`, variant: "default" });
+      } else {
+        toast({ title: "Delete Failed", description: result.error || "Could not delete booking.", variant: "destructive" });
+      }
       setBookingToDelete(null);
     }
   };
 
   const handleCloseDialog = () => {
+    if (isSubmitting) return;
     setIsAddEditDialogOpen(false);
     resetForm();
   }
-
 
   return (
     <div className="container mx-auto py-12 px-4">
@@ -163,13 +187,15 @@ export default function BookingsPage() {
             <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary"/>Upcoming Bookings</CardTitle>
             <CardDescription>A list of scheduled appointments.</CardDescription>
           </div>
-          <Button onClick={handleOpenAddDialog}>
+          <Button onClick={handleOpenAddDialog} disabled={isLoading || isSubmitting}>
             <PlusCircle className="mr-2 h-4 w-4" />
             Add New Booking
           </Button>
         </CardHeader>
         <CardContent>
-          {bookings.length > 0 ? (
+          {isLoading ? (
+            <p>Loading bookings...</p>
+          ) : bookings.length > 0 ? (
             <Table>
               <TableCaption>A list of your salon bookings.</TableCaption>
               <TableHeader>
@@ -187,14 +213,14 @@ export default function BookingsPage() {
                   <TableRow key={booking.id}>
                     <TableCell className="font-medium">{booking.customerName}</TableCell>
                     <TableCell>{booking.service}</TableCell>
-                    <TableCell>{new Date(booking.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{new Date(booking.date + 'T00:00:00').toLocaleDateString()}</TableCell> {/* Ensure correct date parsing */}
                     <TableCell>{booking.time}</TableCell>
                     <TableCell>{booking.staff || 'Any'}</TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" aria-label="Edit Booking" onClick={() => handleOpenEditDialog(booking)}>
+                      <Button variant="ghost" size="icon" aria-label="Edit Booking" onClick={() => handleOpenEditDialog(booking)} disabled={isSubmitting}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" aria-label="Delete Booking" className="text-destructive hover:text-destructive" onClick={() => handleOpenDeleteDialog(booking)}>
+                      <Button variant="ghost" size="icon" aria-label="Delete Booking" className="text-destructive hover:text-destructive" onClick={() => handleOpenDeleteDialog(booking)} disabled={isSubmitting}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -214,8 +240,8 @@ export default function BookingsPage() {
         </CardContent>
       </Card>
 
-       {/* Add/Edit Booking Dialog */}
       <Dialog open={isAddEditDialogOpen} onOpenChange={(isOpen) => {
+        if (isSubmitting) return;
         setIsAddEditDialogOpen(isOpen);
         if (!isOpen) resetForm();
       }}>
@@ -230,20 +256,20 @@ export default function BookingsPage() {
             <div className="grid gap-4 py-4">
               <div className="space-y-1.5">
                 <Label htmlFor="customerName">Customer Name</Label>
-                <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., John Doe" aria-label="Customer Name" />
+                <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., John Doe" aria-label="Customer Name" required/>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="service">Service</Label>
-                <Input id="service" value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g., Haircut, Manicure" aria-label="Service" />
+                <Input id="service" value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g., Haircut, Manicure" aria-label="Service" required/>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="date">Date</Label>
-                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" />
+                  <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" required/>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="time">Time</Label>
-                  <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" />
+                  <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" required/>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -256,15 +282,16 @@ export default function BookingsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={handleCloseDialog}>Cancel</Button>
-              <Button type="submit">Save Booking</Button>
+              <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (currentBookingToEdit ? 'Saving...' : 'Adding...') : 'Save Booking'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!bookingToDelete} onOpenChange={(open) => !open && setBookingToDelete(null)}>
+      <AlertDialog open={!!bookingToDelete} onOpenChange={(open) => { if (isSubmitting) return; !open && setBookingToDelete(null)}}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
@@ -273,12 +300,13 @@ export default function BookingsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setBookingToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteBooking} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">Delete</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setBookingToDelete(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteBooking} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isSubmitting}>
+              {isSubmitting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
