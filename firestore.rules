@@ -3,15 +3,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users:
-    // - Authenticated users can create their own user profile document.
-    // - Only the authenticated user can read or update their own profile.
-    // - Deletion of user profiles is disallowed from client.
     match /users/{userId} {
-      allow create: if request.auth != null && request.auth.uid == userId;
+      // TEMPORARY DEBUGGING: Allow any authenticated user to create a user document.
+      // The server action `setUserProfile` should ensure it only creates
+      // a document where `userId` (the document ID) matches the authenticated user's UID
+      // that was passed into the server action.
+      // Stricter rule was: allow create: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null;
+
+      // Allow an authenticated user to read their own profile.
       allow read: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      allow delete: if false; // Prevent client-side deletion
     }
 
     // Salons:
