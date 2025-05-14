@@ -32,6 +32,7 @@ export default function SalonsPage() {
         });
       }
     } catch (error) {
+      console.error("Error fetching salons:", error)
       toast({ title: "Error", description: "Could not fetch salons.", variant: "destructive" });
     } finally {
       setIsLoading(false);
@@ -85,7 +86,7 @@ export default function SalonsPage() {
             <Card key={i} className="overflow-hidden flex flex-col">
               <Skeleton className="w-full h-56" />
               <CardHeader>
-                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-7 w-3/4 mb-2" />
                 <Skeleton className="h-4 w-1/2" />
               </CardHeader>
               <CardContent className="flex-grow">
@@ -109,12 +110,12 @@ export default function SalonsPage() {
                   alt={salon.name} 
                   fill
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  objectFit="cover"
+                  style={{objectFit:"cover"}}
                   data-ai-hint={salon.aiHint}
                 />
               </div>
               <CardHeader>
-                <CardTitle className="text-xl font-semibold text-foreground">{salon.name}</CardTitle>
+                <CardTitle className="text-2xl font-semibold text-foreground">{salon.name}</CardTitle>
                 <CardDescription className="flex items-center text-sm text-muted-foreground pt-1">
                   <MapPin className="h-4 w-4 mr-1.5" /> {salon.location}
                 </CardDescription>
@@ -122,7 +123,7 @@ export default function SalonsPage() {
               <CardContent className="flex-grow">
                 <div className="flex items-center mb-3">
                   <Star className="h-5 w-5 text-yellow-400 fill-yellow-400 mr-1.5" />
-                  <span className="font-medium text-foreground">{salon.rating}</span>
+                  <span className="font-medium text-foreground">{salon.rating.toFixed(1)}</span>
                   <span className="text-muted-foreground ml-1">({Math.floor(Math.random() * 100) + 50} reviews)</span>
                 </div>
                 <div className="mb-4">

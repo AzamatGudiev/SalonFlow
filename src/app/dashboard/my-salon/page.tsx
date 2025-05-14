@@ -15,8 +15,9 @@ import { ArrowLeft, Save, Building } from 'lucide-react';
 import Link from 'next/link';
 import type { Salon } from '@/lib/schemas';
 import { SalonSchema } from '@/lib/schemas';
-import { addSalon, updateSalon, getSalons, getSalonById } from '@/app/actions/salonActions'; // Added getSalonById
+import { addSalon, updateSalon, getSalonById } from '@/app/actions/salonActions';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 const DEFAULT_SERVICES = [
   "Haircut - Women", "Haircut - Men", "Haircut - Children", "Hair Coloring", "Highlights - Full", "Highlights - Partial", "Balayage",
@@ -53,7 +54,7 @@ export default function MySalonPage() {
     operatingHours: [],
     amenities: [],
     image: '',
-    rating: 0,
+    rating: 0, // Default rating
     aiHint: '',
   });
   const [salonIdToUpdate, setSalonIdToUpdate] = useState<string | null>(null);
@@ -88,7 +89,6 @@ export default function MySalonPage() {
               setSelectedOperatingHours(currentSalon.operatingHours || []);
               setSelectedAmenities(currentSalon.amenities || []);
             } else {
-              // Salon ID was stored but not found in DB, maybe deleted. Clear it.
               localStorage.removeItem(ownerSalonIdKey!);
             }
           })
@@ -98,15 +98,13 @@ export default function MySalonPage() {
           })
           .finally(() => setIsLoadingData(false));
       } else {
-        // No stored salon ID, maybe first time. We could also try to find one by owner if we had ownerId on salon.
-        // For now, we assume a new salon creation or no salon associated yet.
         setIsLoadingData(false);
       }
-    } else if (!user && !authLoading) { // If user becomes null while on page
+    } else if (!user && !authLoading) {
         router.push('/auth/login');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, role, user, router, toast]);
+  }, [authLoading, role, user, router]);
 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -116,13 +114,13 @@ export default function MySalonPage() {
 
   const handleCheckboxChange = (
     value: string,
-    selectedArray: string[],
+    currentSelectedArray: string[],
     setter: React.Dispatch<React.SetStateAction<string[]>>
   ) => {
-    if (selectedArray.includes(value)) {
-      setter(selectedArray.filter(item => item !== value));
+    if (currentSelectedArray.includes(value)) {
+      setter(currentSelectedArray.filter(item => item !== value));
     } else {
-      setter([...selectedArray, value]);
+      setter([...currentSelectedArray, value]);
     }
   };
 
@@ -141,8 +139,8 @@ export default function MySalonPage() {
       services: selectedServices,
       operatingHours: selectedOperatingHours,
       amenities: selectedAmenities,
-      rating: salonDetails.rating || 0, // Or handle rating differently
-      image: salonDetails.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(salonDetails.name || 'Salon')}`,
+      rating: salonDetails.rating || Math.floor(Math.random() * 2) + 3.5, // Random rating between 3.5 and 4.5 for new
+      image: salonDetails.image || `https://placehold.co/1200x800.png`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
     
@@ -175,7 +173,6 @@ export default function MySalonPage() {
       setSelectedOperatingHours(result.salon.operatingHours || []);
       setSelectedAmenities(result.salon.amenities || []);
       
-      // Store the salon ID in localStorage for the current owner
       const ownerSalonIdKey = getOwnerSalonIdKey();
       if (ownerSalonIdKey) {
           localStorage.setItem(ownerSalonIdKey, result.salon.id);
@@ -191,7 +188,6 @@ export default function MySalonPage() {
     return <div className="container mx-auto p-8">Loading salon details...</div>;
   }
   if (role !== 'owner') {
-     // This should be caught by useEffect redirect, but as a safeguard.
      return <div className="container mx-auto p-8">Access Denied. Redirecting...</div>;
   }
 
@@ -233,19 +229,24 @@ export default function MySalonPage() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" name="description" value={salonDetails.description || ''} onChange={handleChange} placeholder="Tell customers about your salon, its atmosphere, and unique qualities." className="min-h-[100px]" />
             </div>
+            
+            <Separator className="my-4" />
+
             <div className="space-y-2">
               <Label htmlFor="image">Main Image URL</Label>
               <Input id="image" name="image" value={salonDetails.image || ''} onChange={handleChange} placeholder="https://placehold.co/1200x800.png" />
-              <p className="text-xs text-muted-foreground">A captivating image of your salon. Use a service like Placehold.co for placeholders.</p>
+              <p className="text-xs text-muted-foreground">A captivating image of your salon. Uses a default placeholder if empty.</p>
             </div>
              <div className="space-y-2">
-              <Label htmlFor="aiHint">Image AI Hint (1-2 words for placeholder)</Label>
+              <Label htmlFor="aiHint">Image AI Hint (1-2 words for placeholder image)</Label>
               <Input id="aiHint" name="aiHint" value={salonDetails.aiHint || ''} onChange={handleChange} placeholder="e.g., modern salon" />
-              <p className="text-xs text-muted-foreground">Helps AI find relevant images if a real one isn't available. E.g., "luxury spa", "barber shop".</p>
+              <p className="text-xs text-muted-foreground">Helps generate a relevant placeholder image if no URL is provided. E.g., "luxury spa", "barber shop".</p>
             </div>
 
+            <Separator className="my-4" />
+
             <div className="space-y-2">
-              <Label>Service Categories Offered</Label>
+              <Label>Service Categories Offered *</Label>
               <ScrollArea className="h-48 w-full rounded-md border p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   {DEFAULT_SERVICES.map(service => (
@@ -263,8 +264,11 @@ export default function MySalonPage() {
                   ))}
                 </div>
               </ScrollArea>
+               {selectedServices.length === 0 && <p className="text-xs text-destructive">Please select at least one service category.</p>}
             </div>
             
+            <Separator className="my-4" />
+
             <div className="space-y-2">
               <Label>Operating Hours</Label>
                <ScrollArea className="h-48 w-full rounded-md border p-4">
@@ -285,6 +289,8 @@ export default function MySalonPage() {
                 </div>
               </ScrollArea>
             </div>
+
+            <Separator className="my-4" />
 
              <div className="space-y-2">
               <Label>Amenities</Label>
@@ -307,7 +313,7 @@ export default function MySalonPage() {
               </ScrollArea>
             </div>
 
-            <Button type="submit" className="w-full text-lg py-6" disabled={isSubmitting || authLoading}>
+            <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || selectedServices.length === 0}>
               <Save className="mr-2 h-5 w-5" /> {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create Salon')}
             </Button>
           </CardContent>
@@ -316,4 +322,3 @@ export default function MySalonPage() {
     </div>
   );
 }
-    
