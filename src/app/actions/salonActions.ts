@@ -12,6 +12,7 @@ import {
   updateDoc, 
   deleteDoc,
   query,
+  // where // We might add 'where' for getSalonByOwnerUid if needed later
 } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -25,6 +26,11 @@ export async function getSalons(searchQuery?: string): Promise<Salon[]> {
   try {
     const salonsCollectionRef = collection(db, SALONS_COLLECTION);
     let q = query(salonsCollectionRef);
+
+    // Example: if you wanted to filter by ownerUid directly in Firestore (more efficient)
+    // if (ownerUid) {
+    //   q = query(q, where("ownerUid", "==", ownerUid));
+    // }
 
     const querySnapshot = await getDocs(q);
     const salons: Salon[] = [];
@@ -49,8 +55,9 @@ export async function getSalons(searchQuery?: string): Promise<Salon[]> {
       }
     });
     return salons;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching salons from Firestore:", error);
+    // Return empty array on error to prevent app crash
     return [];
   }
 }
@@ -80,12 +87,13 @@ export async function getSalonById(id: string): Promise<Salon | null> {
       console.log("No such salon document!");
       return null;
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching salon by ID from Firestore:", error);
     return null;
   }
 }
 
+// Type for addSalon input to ensure ownerUid is present and id is not.
 export type AddSalonInput = Omit<Salon, 'id'>;
 
 export async function addSalon(data: AddSalonInput): Promise<{ success: boolean; salon?: Salon; error?: string }> {
@@ -96,16 +104,18 @@ export async function addSalon(data: AddSalonInput): Promise<{ success: boolean;
       return { success: false, error: "Owner UID is required to add a salon." };
   }
   
+  // Ensure default values for optional fields if not provided by the form
   const dataWithDefaults = {
     ...data,
     description: data.description || '',
     operatingHours: data.operatingHours || [],
     amenities: data.amenities || [],
-    rating: data.rating || 0,
+    rating: data.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Keep random rating for now
     aiHint: data.aiHint || data.name.split(' ')[0]?.toLowerCase() || 'salon',
     image: data.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(data.name)}`,
   };
   
+  // Validate against the schema that omits 'id'
   const validationResult = SalonSchema.omit({id: true}).safeParse(dataWithDefaults);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
@@ -121,9 +131,9 @@ export async function addSalon(data: AddSalonInput): Promise<{ success: boolean;
       id: docRef.id,
     };
     return { success: true, salon: newSalon };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error adding salon to Firestore:", error);
-    return { success: false, error: "Failed to add salon to the database. Please try again." };
+    return { success: false, error: error.message || "Failed to add salon to the database. Please try again." };
   }
 }
 
@@ -135,6 +145,7 @@ export async function updateSalon(data: Salon): Promise<{ success: boolean; salo
       return { success: false, error: "Owner UID is missing in salon data for update." };
   }
 
+  // Validate the full salon object, including 'id'
   const validationResult = SalonSchema.safeParse(data);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
@@ -144,13 +155,14 @@ export async function updateSalon(data: Salon): Promise<{ success: boolean; salo
 
   try {
     const salonDocRef = doc(db, SALONS_COLLECTION, data.id);
+    // Firestore updateDoc doesn't want the 'id' field in the data object itself
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { id, ...dataToUpdate } = validationResult.data;
+    const { id, ...dataToUpdate } = validationResult.data; 
     await updateDoc(salonDocRef, dataToUpdate);
     return { success: true, salon: validationResult.data };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error updating salon in Firestore:", error);
-    return { success: false, error: "Failed to update salon in the database. Please try again." };
+    return { success: false, error: error.message || "Failed to update salon in the database. Please try again." };
   }
 }
 
@@ -166,8 +178,10 @@ export async function deleteSalon(id: string): Promise<{ success: boolean; error
     const salonDocRef = doc(db, SALONS_COLLECTION, id);
     await deleteDoc(salonDocRef);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting salon from Firestore:", error);
-    return { success: false, error: "Failed to delete salon from the database. Please try again." };
+    return { success: false, error: error.message || "Failed to delete salon from the database. Please try again." };
   }
 }
+
+    

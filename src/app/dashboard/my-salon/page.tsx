@@ -13,9 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Save, Building, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import type { Salon } from '@/lib/schemas';
+import type { Salon, UserProfile } from '@/lib/schemas';
 import { SalonSchema } from '@/lib/schemas';
-import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions';
+import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions'; // Assuming getSalons can be used or a new getSalonByOwnerUid
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
@@ -72,31 +72,42 @@ export default function MySalonPage() {
   }, [authLoading, isLoggedIn, role, router, toast]);
   
   useEffect(() => {
-    if (role === 'owner' && user?.firebaseUid) {
-      setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid }));
-      setIsLoadingData(true);
-      const ownerSalonIdKey = getOwnerSalonIdKey();
-      
-      getSalons().then(allSalons => {
-        const ownerSalon = allSalons.find(s => s.ownerUid === user.firebaseUid);
-        if (ownerSalon) {
-          setSalonDetails(ownerSalon);
-          setSalonIdToUpdate(ownerSalon.id);
-          setSelectedServices(ownerSalon.services || []);
-          setSelectedOperatingHours(ownerSalon.operatingHours || []);
-          setSelectedAmenities(ownerSalon.amenities || []);
-          if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, ownerSalon.id); }
-        } else if (ownerSalonIdKey) {
-           localStorage.removeItem(ownerSalonIdKey); 
-           setSalonIdToUpdate(null); 
+    async function fetchOwnerSalon() {
+      if (role === 'owner' && user?.firebaseUid) {
+        setIsLoadingData(true);
+        try {
+          // Fetch all salons and find the one owned by the current user
+          const allSalons = await getSalons(); 
+          const ownerSalon = allSalons.find(s => s.ownerUid === user.firebaseUid);
+          
+          if (ownerSalon) {
+            setSalonDetails(ownerSalon);
+            setSalonIdToUpdate(ownerSalon.id);
+            setSelectedServices(ownerSalon.services || []);
+            setSelectedOperatingHours(ownerSalon.operatingHours || []);
+            setSelectedAmenities(ownerSalon.amenities || []);
+            const ownerSalonIdKey = getOwnerSalonIdKey();
+            if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, ownerSalon.id); }
+          } else {
+            // No salon found for this owner, set ownerUid for new salon creation
+            setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid }));
+            setSalonIdToUpdate(null);
+            const ownerSalonIdKey = getOwnerSalonIdKey();
+            if (ownerSalonIdKey) { localStorage.removeItem(ownerSalonIdKey); }
+          }
+        } catch (err: any) {
+          console.error("Error fetching salon details:", err);
+          toast({ title: "Error", description: err.message || "Could not fetch your salon details.", variant: "destructive" });
+        } finally {
+          setIsLoadingData(false);
         }
-      }).catch(err => {
-        console.error("Error fetching salon details:", err);
-        toast({ title: "Error", description: "Could not fetch your salon details.", variant: "destructive" });
-      }).finally(() => setIsLoadingData(false));
-    } else if (!user && !authLoading) {
-      router.push('/auth/login');
+      } else if (!user && !authLoading) {
+        router.push('/auth/login'); // Should be handled by previous effect, but as a safeguard
+      } else if (user && role !== 'owner' && !authLoading){
+        setIsLoadingData(false); // Not an owner, no salon to fetch
+      }
     }
+    fetchOwnerSalon();
   }, [authLoading, role, user, router, toast, getOwnerSalonIdKey]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -130,14 +141,14 @@ export default function MySalonPage() {
       services: selectedServices,
       operatingHours: selectedOperatingHours, 
       amenities: selectedAmenities,
-      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)),
-      image: salonDetails.image || `https://placehold.co/1200x800.png`,
+      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Keep random rating for now
+      image: salonDetails.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(salonDetails.name || 'Salon')}`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
     
     let result;
     if (salonIdToUpdate) {
-      const dataToUpdate: Salon = { ...finalSalonDataInput, id: salonIdToUpdate } as Salon; // Cast as Salon, ensure all required fields are there
+      const dataToUpdate: Salon = { ...finalSalonDataInput, id: salonIdToUpdate } as Salon; 
       const validation = SalonSchema.safeParse(dataToUpdate);
       if (!validation.success) {
         toast({ title: "Validation Error", description: JSON.stringify(validation.error.flatten().fieldErrors), variant: "destructive" });
@@ -145,7 +156,11 @@ export default function MySalonPage() {
       }
       result = await updateSalon(validation.data);
     } else {
-      const dataToAdd: Omit<Salon, 'id'> = finalSalonDataInput as Omit<Salon, 'id'>; // Cast, ensure id is not there
+      // For addSalon, we omit 'id' as Firestore generates it.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, ...dataToAddWithoutId } = finalSalonDataInput;
+      const dataToAdd: Omit<Salon, 'id'> = dataToAddWithoutId as Omit<Salon, 'id'>;
+      
       const validation = SalonSchema.omit({id: true}).safeParse(dataToAdd);
        if (!validation.success) {
         toast({ title: "Validation Error", description: JSON.stringify(validation.error.flatten().fieldErrors), variant: "destructive" });
@@ -241,7 +256,7 @@ export default function MySalonPage() {
                 </div>
               </ScrollArea>
             </div>
-            <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || selectedServices.length === 0}>
+            <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || isLoadingData || selectedServices.length === 0}>
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
               {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create My Salon')}
             </Button>
@@ -251,3 +266,5 @@ export default function MySalonPage() {
     </div>
   );
 }
+
+    
