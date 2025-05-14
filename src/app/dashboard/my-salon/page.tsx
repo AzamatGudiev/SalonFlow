@@ -38,7 +38,7 @@ const DEFAULT_AMENITIES = [
   "Online Booking", "Walk-ins Welcome", "Gender-Neutral Restrooms", "Background Music", "Magazines/Reading Material"
 ];
 
-const OWNER_SALON_ID_LOCAL_STORAGE_KEY = 'owner_salon_id_';
+const OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX = 'owner_salon_id_';
 
 export default function MySalonPage() {
   const { user, role, isLoading: authLoading, isLoggedIn } = useAuth();
@@ -57,7 +57,7 @@ export default function MySalonPage() {
   const [selectedOperatingHours, setSelectedOperatingHours] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
-  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY}${user.firebaseUid}` : null, [user]);
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
@@ -72,7 +72,7 @@ export default function MySalonPage() {
   }, [authLoading, isLoggedIn, role, router, toast]);
   
   useEffect(() => {
-    if (role === 'owner' && user) {
+    if (role === 'owner' && user?.firebaseUid) {
       setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid }));
       setIsLoadingData(true);
       const ownerSalonIdKey = getOwnerSalonIdKey();
@@ -87,8 +87,8 @@ export default function MySalonPage() {
           setSelectedAmenities(ownerSalon.amenities || []);
           if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, ownerSalon.id); }
         } else if (ownerSalonIdKey) {
-           localStorage.removeItem(ownerSalonIdKey); // Clear if no salon found for this owner
-           setSalonIdToUpdate(null); // Reset edit state
+           localStorage.removeItem(ownerSalonIdKey); 
+           setSalonIdToUpdate(null); 
         }
       }).catch(err => {
         console.error("Error fetching salon details:", err);
@@ -122,11 +122,14 @@ export default function MySalonPage() {
     }
     setIsSubmitting(true);
 
-    const finalSalonData: Partial<Salon> = {
+    const finalSalonDataInput = {
       ...salonDetails,
-      ownerUid: user.firebaseUid, name: salonDetails.name || 'My Salon',
-      location: salonDetails.location || 'Default Location', services: selectedServices,
-      operatingHours: selectedOperatingHours, amenities: selectedAmenities,
+      ownerUid: user.firebaseUid, 
+      name: salonDetails.name || 'My Salon',
+      location: salonDetails.location || 'Default Location', 
+      services: selectedServices,
+      operatingHours: selectedOperatingHours, 
+      amenities: selectedAmenities,
       rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)),
       image: salonDetails.image || `https://placehold.co/1200x800.png`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
@@ -134,11 +137,21 @@ export default function MySalonPage() {
     
     let result;
     if (salonIdToUpdate) {
-      const dataToUpdate: Salon = { ...finalSalonData, id: salonIdToUpdate } as Salon;
-      result = await updateSalon(dataToUpdate);
+      const dataToUpdate: Salon = { ...finalSalonDataInput, id: salonIdToUpdate } as Salon; // Cast as Salon, ensure all required fields are there
+      const validation = SalonSchema.safeParse(dataToUpdate);
+      if (!validation.success) {
+        toast({ title: "Validation Error", description: JSON.stringify(validation.error.flatten().fieldErrors), variant: "destructive" });
+        setIsSubmitting(false); return;
+      }
+      result = await updateSalon(validation.data);
     } else {
-      const dataToAdd: Omit<Salon, 'id'> = finalSalonData as Omit<Salon, 'id'>;
-      result = await addSalon(dataToAdd);
+      const dataToAdd: Omit<Salon, 'id'> = finalSalonDataInput as Omit<Salon, 'id'>; // Cast, ensure id is not there
+      const validation = SalonSchema.omit({id: true}).safeParse(dataToAdd);
+       if (!validation.success) {
+        toast({ title: "Validation Error", description: JSON.stringify(validation.error.flatten().fieldErrors), variant: "destructive" });
+        setIsSubmitting(false); return;
+      }
+      result = await addSalon(validation.data);
     }
 
     if (result.success && result.salon) {
@@ -175,7 +188,7 @@ export default function MySalonPage() {
             {salonIdToUpdate ? 'Update your salon\'s information that customers will see.' : 'Showcase your salon on SalonFlow to attract bookings.'}
           </p>
         </div>
-        <Button asChild variant="outline"> <Link href="/dashboard"> <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard </Link> </Button>
+        <Button asChild variant="outline"><Link href="/dashboard"><ArrowLeft className="mr-2 h-4 w-4" />Back to Dashboard</Link></Button>
       </header>
 
       <Card className="max-w-3xl mx-auto shadow-xl">
