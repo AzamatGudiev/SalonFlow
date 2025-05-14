@@ -3,7 +3,7 @@
 
 import { db, auth } from '@/lib/firebase'; // Ensure auth is imported
 import { UserProfileSchema, type UserProfile } from '@/lib/schemas';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'; 
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 const USERS_COLLECTION = 'users';
 
@@ -12,19 +12,19 @@ const USERS_COLLECTION = 'users';
  * Uses uid as the document ID.
  */
 export async function setUserProfile(userData: UserProfile): Promise<{ success: boolean; error?: string }> {
-  console.log("setUserProfile ACTION: Received userData:", JSON.stringify(userData)); // Log received data
-
-  // Log current auth state on the server when this action is called
-  if (auth) {
-    console.log("setUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
-  } else {
-    console.log("setUserProfile ACTION: auth object from firebase.ts is null/undefined on server (at start of action).");
-  }
+  console.log("setUserProfile ACTION: Received userData:", JSON.stringify(userData));
 
   if (!db) {
-    const errorMsg = "Firestore database is not initialized (setUserProfile).";
+    const errorMsg = "Firestore database (db) is not initialized in setUserProfile. Check firebase.ts and Vercel env vars.";
     console.error("setUserProfile ACTION:", errorMsg);
     return { success: false, error: errorMsg };
+  }
+  console.log("setUserProfile ACTION: 'db' instance appears to be defined.");
+
+  if (!auth) {
+    console.log("setUserProfile ACTION: Firebase 'auth' instance is not available in setUserProfile.");
+  } else {
+    console.log("setUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
   }
 
   const validationResult = UserProfileSchema.safeParse(userData);
@@ -36,16 +36,16 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
 
   try {
     const userDocRef = doc(db, USERS_COLLECTION, userData.uid);
-    
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { uid, ...profileDataForDoc } = validationResult.data;
 
     const dataToSet = {
+      uid: userData.uid, // Ensure uid is part of the data written for rules like `request.resource.data.uid == userId`
       ...profileDataForDoc,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
-
+    console.log("setUserProfile ACTION: Attempting to set document with data:", JSON.stringify(dataToSet));
     await setDoc(userDocRef, dataToSet, { merge: true });
     console.log(`setUserProfile ACTION: Profile successfully set for UID: ${userData.uid}`);
     return { success: true };
@@ -60,16 +60,20 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
  */
 export async function getUserProfile(uid: string): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
   console.log("getUserProfile ACTION: Attempting to fetch profile for UID:", uid);
-  if (auth) {
-    console.log("getUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
-  } else {
-    console.log("getUserProfile ACTION: auth object from firebase.ts is null/undefined on server (at start of action).");
-  }
+  
   if (!db) {
-    const errorMsg = "Firestore database is not initialized (getUserProfile).";
+    const errorMsg = "Firestore database (db) is not initialized in getUserProfile. Check firebase.ts and Vercel env vars.";
     console.error("getUserProfile ACTION:", errorMsg);
     return { success: false, error: errorMsg };
   }
+  console.log("getUserProfile ACTION: 'db' instance appears to be defined.");
+
+  if (!auth) {
+    console.log("getUserProfile ACTION: Firebase 'auth' instance is not available in getUserProfile.");
+  } else {
+    console.log("getUserProfile ACTION: auth.currentUser on server (at start of action):", auth.currentUser ? auth.currentUser.uid : 'null');
+  }
+  
   if (!uid) {
     const errorMsg = "User UID is required to fetch profile (getUserProfile).";
     console.warn("getUserProfile ACTION:", errorMsg);
@@ -104,4 +108,3 @@ export async function getUserProfile(uid: string): Promise<{ success: boolean; p
     return { success: false, error: `Failed to fetch user profile. Firebase Code: ${error.code || 'UNKNOWN_ERROR'}` };
   }
 }
-

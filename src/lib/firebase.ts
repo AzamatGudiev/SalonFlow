@@ -4,63 +4,70 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getAuth, type Auth } from "firebase/auth";
 
-// It's crucial that these are correctly set in .env.local or your hosting environment
-const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
-const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-const messagingSenderId = process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
-const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
-const measurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID; // Optional
+// Log all expected environment variables to see what Vercel functions are receiving
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_API_KEY:", process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? "Exists" : "MISSING");
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? "Exists" : "MISSING");
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? "Exists" : "MISSING");
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ? "Exists" : "MISSING");
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:", process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ? "Exists" : "MISSING");
+console.log("Firebase Init: NEXT_PUBLIC_FIREBASE_APP_ID:", process.env.NEXT_PUBLIC_FIREBASE_APP_ID ? "Exists" : "MISSING");
+
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID, // Optional
+};
 
 let app: FirebaseApp | undefined = undefined;
 let auth: Auth | undefined = undefined;
 let db: Firestore | undefined = undefined;
 
-const isDevelopment = process.env.NODE_ENV === 'development';
-
-if (!apiKey || !projectId) {
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   console.error(
-    "Firebase Core Configuration Error: Missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID. " +
-    "Please ensure these are correctly set in your .env.local file (and that you've restarted your dev server) or in your Firebase Studio environment settings. " +
-    "Firebase services will not be available."
+    "Firebase Core Configuration Error: Critical Firebase config (apiKey or projectId) is MISSING. " +
+    "Verify Vercel environment variables. Firebase services will NOT be available."
   );
 } else {
-  const firebaseConfig = {
-    apiKey,
-    authDomain,
-    projectId,
-    storageBucket,
-    messagingSenderId,
-    appId,
-    measurementId,
-  };
-
   if (getApps().length === 0) {
     try {
+      console.log("Firebase Init: No existing apps, attempting to initializeApp()...");
       app = initializeApp(firebaseConfig);
-      if (isDevelopment) console.log("Firebase app initialized successfully.");
+      console.log("Firebase Init: initializeApp() SUCCEEDED.");
     } catch (error) {
-      console.error("Firebase initialization failed:", error);
+      console.error("Firebase Init: initializeApp() FAILED:", error);
     }
   } else {
+    console.log("Firebase Init: Existing app found, using getApp().");
     app = getApp();
-    if (isDevelopment) console.log("Using existing Firebase app instance.");
   }
 
   if (app) {
     try {
       auth = getAuth(app);
-      db = getFirestore(app);
-      if (isDevelopment) console.log("Firebase Auth and Firestore services obtained.");
+      console.log("Firebase Init: getAuth(app) SUCCEEDED.");
     } catch (serviceError) {
-      console.error("Failed to obtain Firebase Auth/Firestore services:", serviceError);
+      console.error("Firebase Init: getAuth(app) FAILED:", serviceError);
+    }
+    try {
+      db = getFirestore(app);
+      console.log("Firebase Init: getFirestore(app) SUCCEEDED.");
+    } catch (serviceError) {
+      console.error("Firebase Init: getFirestore(app) FAILED:", serviceError);
     }
   } else {
-    if (apiKey && projectId && isDevelopment) { 
-        console.warn("Firebase app instance is not available even though config was provided. Auth and Firestore cannot be initialized.");
-    }
+    console.error("Firebase Init: Firebase app instance is UNDEFINED after initialization attempt.");
   }
+}
+
+if (!db) {
+    console.error("Firebase Init: Firestore 'db' instance is UNDEFINED at the end of firebase.ts. Writes will fail.");
+}
+if (!auth) {
+    console.error("Firebase Init: Firebase 'auth' instance is UNDEFINED at the end of firebase.ts. Auth operations will fail.");
 }
 
 export { app, auth, db };
