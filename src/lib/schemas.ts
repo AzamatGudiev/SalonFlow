@@ -36,6 +36,7 @@ export const StaffSchema = z.object({
   initials: z.string().min(1).max(2, "Initials should be 1 or 2 characters.").optional(),
   aiHint: z.string().optional(),
   providedServices: z.array(z.string()).optional().default([]), // Array of service names
+  salonId: z.string().min(1, "Salon ID is required."), // Added salonId
 });
 export type StaffMember = z.infer<typeof StaffSchema>;
 
@@ -58,7 +59,7 @@ export const SalonSchema = z.object({
   name: z.string(),
   location: z.string(),
   rating: z.number(),
-  services: z.array(z.string()),
+  services: z.array(z.string()), // These are service categories
   image: z.string().url(),
   aiHint: z.string(),
   description: z.string().optional(),

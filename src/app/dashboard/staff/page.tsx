@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, UserPlus, Edit, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, UserPlus, Edit, Trash2, Wrench, Building } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -30,8 +30,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StaffSchema, type StaffMember, type Service } from '@/lib/schemas';
 import { getStaffMembers, addStaffMember, updateStaffMember, deleteStaffMember, type AddStaffInput } from '@/app/actions/staffActions';
-import { getServices } from '@/app/actions/serviceActions'; // To fetch available services
+import { getServices } from '@/app/actions/serviceActions';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/hooks/use-auth";
+
+const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
 
 function generateInitials(name: string): string {
   if (!name) return '??';
@@ -48,6 +51,7 @@ function generateInitials(name: string): string {
 
 export default function StaffPage() {
   const { toast } = useToast();
+  const { user, role } = useAuth(); // Get current user for salonId
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [availableServices, setAvailableServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,37 +59,53 @@ export default function StaffPage() {
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [currentStaffToEdit, setCurrentStaffToEdit] = useState<StaffMember | null>(null);
   const [staffToDelete, setStaffToDelete] = useState<StaffMember | null>(null);
+  const [ownerSalonId, setOwnerSalonId] = useState<string | null>(null);
 
   // Form state for Add/Edit Dialog
   const [name, setName] = useState('');
-  const [role, setRole] = useState('');
+  const [staffRole, setStaffRole] = useState(''); // Renamed to avoid conflict with useAuth role
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
+  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.email}` : null;
 
   useEffect(() => {
     async function fetchInitialData() {
       setIsLoading(true);
+      let currentOwnerSalonId: string | null = null;
+      if (role === 'owner' && user) {
+        const key = getOwnerSalonIdKey();
+        currentOwnerSalonId = key ? localStorage.getItem(key) : null;
+        setOwnerSalonId(currentOwnerSalonId);
+      }
+
       try {
         const [fetchedStaff, fetchedServices] = await Promise.all([
-          getStaffMembers(),
+          currentOwnerSalonId ? getStaffMembers({ salonId: currentOwnerSalonId }) : Promise.resolve([] as StaffMember[]), // Fetch only own staff if owner
           getServices()
         ]);
+        
+        if(role === 'owner' && !currentOwnerSalonId) {
+            toast({ title: "Salon Not Found", description: "Please set up your salon in 'My Salon' before adding staff.", variant: "default", duration: 7000 });
+        }
+
         setStaffList(fetchedStaff.map(staff => ({...staff, initials: generateInitials(staff.name), providedServices: staff.providedServices || [] })));
         setAvailableServices(fetchedServices);
       } catch (error) {
+        console.error("Error fetching initial data for staff page:", error);
         toast({ title: "Error fetching data", description: "Could not load staff or services.", variant: "destructive" });
       } finally {
         setIsLoading(false);
       }
     }
     fetchInitialData();
-  }, [toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, user, role]);
 
   const resetForm = () => {
     setName('');
-    setRole('');
+    setStaffRole('');
     setEmail('');
     setAvatarUrl('');
     setSelectedServices([]);
@@ -93,6 +113,10 @@ export default function StaffPage() {
   };
 
   const handleOpenAddDialog = () => {
+    if (role === 'owner' && !ownerSalonId) {
+      toast({ title: "Cannot Add Staff", description: "Please create or select your salon in 'My Salon' first.", variant: "destructive" });
+      return;
+    }
     resetForm();
     setIsAddEditDialogOpen(true);
   };
@@ -100,7 +124,7 @@ export default function StaffPage() {
   const handleOpenEditDialog = (staff: StaffMember) => {
     setCurrentStaffToEdit(staff);
     setName(staff.name);
-    setRole(staff.role);
+    setStaffRole(staff.role);
     setEmail(staff.email);
     setAvatarUrl(staff.avatar || '');
     setSelectedServices(staff.providedServices || []);
@@ -115,22 +139,30 @@ export default function StaffPage() {
 
   const handleSaveStaff = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (role === 'owner' && !ownerSalonId) {
+       toast({ title: "Save Failed", description: "Salon information is missing. Please set up your salon.", variant: "destructive" });
+       setIsSubmitting(false);
+       return;
+    }
+
     setIsSubmitting(true);
     
     const staffDataInput: AddStaffInput = {
       name,
-      role,
+      role: staffRole,
       email,
       avatar: avatarUrl || undefined,
       providedServices: selectedServices,
+      salonId: ownerSalonId!, // salonId is now mandatory for AddStaffInput
     };
         
     if (currentStaffToEdit) {
       const dataToUpdate: StaffMember = {
         id: currentStaffToEdit.id,
-        initials: generateInitials(name), // Regenerate initials in case name changed
-        aiHint: name.split(' ')[0]?.toLowerCase() || 'person', // Regenerate hint
-        ...staffDataInput,
+        initials: generateInitials(name), 
+        aiHint: name.split(' ')[0]?.toLowerCase() || 'person',
+        ...staffDataInput, // contains salonId
         avatar: staffDataInput.avatar || `https://placehold.co/100x100.png?text=${generateInitials(name)}`,
       };
       const result = await updateStaffMember(dataToUpdate);
@@ -185,7 +217,7 @@ export default function StaffPage() {
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-primary">Manage Staff</h1>
           <p className="mt-2 text-lg text-muted-foreground">
-            Add, edit, or manage your salon staff members and their services.
+            {role === 'owner' ? "Add, edit, or manage your salon's staff members and their services." : "View staff members."}
           </p>
         </div>
         <Button asChild variant="outline">
@@ -200,12 +232,17 @@ export default function StaffPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Salon Staff</CardTitle>
-            <CardDescription>List of all staff members.</CardDescription>
+            <CardDescription>{role === 'owner' && ownerSalonId ? "Staff members for your salon." : "List of all staff members."}</CardDescription>
+            {role === 'owner' && !ownerSalonId && !isLoading && (
+                <p className="text-sm text-destructive">Please set up your salon in 'My Salon' to manage staff.</p>
+            )}
           </div>
-          <Button onClick={handleOpenAddDialog} disabled={isLoading || isSubmitting}>
+          {role === 'owner' && (
+          <Button onClick={handleOpenAddDialog} disabled={isLoading || isSubmitting || !ownerSalonId}>
             <UserPlus className="mr-2 h-4 w-4" />
             Add New Staff
           </Button>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading && staffList.length === 0 ? (
@@ -226,19 +263,22 @@ export default function StaffPage() {
                   </CardHeader>
                   <CardContent className="flex-grow p-4 space-y-2">
                     <p className="text-sm text-muted-foreground break-all">{staff.email}</p>
+                     {/* Display Salon ID if admin/superuser role was viewing all staff */}
+                    {/* {role !== 'owner' && <p className="text-xs text-muted-foreground">Salon ID: {staff.salonId}</p>} */}
                     {staff.providedServices && staff.providedServices.length > 0 && (
                       <div>
                         <h4 className="text-xs font-semibold text-muted-foreground mb-1">Services:</h4>
                         <div className="flex flex-wrap gap-1">
-                          {staff.providedServices.map(service => (
-                            <span key={service} className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full border border-border">
-                              {service}
+                          {staff.providedServices.map(serviceName => (
+                            <span key={serviceName} className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full border border-border">
+                              {serviceName}
                             </span>
                           ))}
                         </div>
                       </div>
                     )}
                   </CardContent>
+                  {role === 'owner' && ownerSalonId === staff.salonId && (
                   <CardFooter className="p-4 pt-0 flex justify-end gap-2 border-t mt-auto">
                      <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(staff)} disabled={isSubmitting}>
                         <Edit className="mr-2 h-4 w-4" /> Edit
@@ -247,6 +287,7 @@ export default function StaffPage() {
                         <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </Button>
                   </CardFooter>
+                  )}
                 </Card>
               ))}
             </div>
@@ -254,7 +295,8 @@ export default function StaffPage() {
              <div className="min-h-[200px] flex flex-col items-center justify-center bg-muted/30 rounded-md p-4">
               <UserPlus className="h-12 w-12 text-muted-foreground mb-4" />
               <p className="text-muted-foreground font-semibold">No staff members added yet.</p>
-              <p className="text-sm text-muted-foreground mt-2">Click &quot;Add New Staff&quot; to get started.</p>
+              {role === 'owner' && ownerSalonId && <p className="text-sm text-muted-foreground mt-2">Click &quot;Add New Staff&quot; to get started.</p>}
+              {role === 'owner' && !ownerSalonId && !isLoading && <p className="text-sm text-muted-foreground mt-2">Please complete your salon setup in "My Salon".</p>}
             </div>
           )}
         </CardContent>
@@ -281,7 +323,7 @@ export default function StaffPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="staff-role">Role</Label>
-                <Input id="staff-role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g., Stylist, Barber" required aria-label="Staff Role"/>
+                <Input id="staff-role" value={staffRole} onChange={(e) => setStaffRole(e.target.value)} placeholder="e.g., Stylist, Barber" required aria-label="Staff Role"/>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="staff-email">Email</Label>
@@ -303,10 +345,10 @@ export default function StaffPage() {
                         onCheckedChange={(checked) => handleServiceSelectionChange(service.name, !!checked)}
                       />
                       <Label htmlFor={`service-${service.id}`} className="text-sm font-normal">
-                        {service.name}
+                        {service.name} ({service.category})
                       </Label>
                     </div>
-                  )) : <p className="text-xs text-muted-foreground">No services available. Add services first.</p>}
+                  )) : <p className="text-xs text-muted-foreground">No services available. Add services first in the 'Manage Services' section.</p>}
                 </ScrollArea>
               </div>
             </div>
