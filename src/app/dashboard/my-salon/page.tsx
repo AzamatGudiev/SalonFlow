@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Save, Building } from 'lucide-react';
+import { ArrowLeft, Save, Building, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import type { Salon } from '@/lib/schemas';
-import { SalonSchema } from '@/lib/schemas';
-import { addSalon, updateSalon, getSalonById } from '@/app/actions/salonActions';
+import { SalonSchema } from '@/lib/schemas'; // For validation
+import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions'; // Using getSalons to check for existing
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
@@ -38,8 +38,8 @@ const DEFAULT_AMENITIES = [
   "Online Booking", "Walk-ins Welcome", "Gender-Neutral Restrooms", "Background Music", "Magazines/Reading Material"
 ];
 
-const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
-
+// Key for localStorage to store the owner's salon ID.
+const OWNER_SALON_ID_LOCAL_STORAGE_KEY = 'owner_salon_id_';
 
 export default function MySalonPage() {
   const { user, role, isLoading: authLoading } = useAuth();
@@ -54,18 +54,20 @@ export default function MySalonPage() {
     operatingHours: [],
     amenities: [],
     image: '',
-    rating: 0, // Default rating
+    rating: 0,
     aiHint: '',
+    ownerUid: user?.firebaseUid || '', // Initialize with current user's UID
   });
-  const [salonIdToUpdate, setSalonIdToUpdate] = useState<string | null>(null);
+  const [salonIdToUpdate, setSalonIdToUpdate] = useState<string | null>(null); // To store existing salon ID for updates
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
+  // State for checkbox selections
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [selectedOperatingHours, setSelectedOperatingHours] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
 
-  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.email}` : null;
+  const getOwnerSalonIdKey = () => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY}${user.firebaseUid}` : null;
 
   useEffect(() => {
     if (!authLoading && role !== 'owner') {
@@ -75,37 +77,38 @@ export default function MySalonPage() {
     }
 
     if (role === 'owner' && user) {
+      setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid })); // Ensure ownerUid is set if user loads
       setIsLoadingData(true);
       const ownerSalonIdKey = getOwnerSalonIdKey();
       const storedSalonId = ownerSalonIdKey ? localStorage.getItem(ownerSalonIdKey) : null;
+      
+      // Attempt to fetch existing salon for this owner from Firestore directly
+      // This makes localStorage just a hint or fallback.
+      getSalons().then(allSalons => { // A more robust way would be a getSalonByOwnerUid action
+        const ownerSalon = allSalons.find(s => s.ownerUid === user.firebaseUid);
+        if (ownerSalon) {
+          setSalonDetails(ownerSalon);
+          setSalonIdToUpdate(ownerSalon.id);
+          setSelectedServices(ownerSalon.services || []);
+          setSelectedOperatingHours(ownerSalon.operatingHours || []);
+          setSelectedAmenities(ownerSalon.amenities || []);
+          if (ownerSalonIdKey && !storedSalonId) { // Sync localStorage if not set
+            localStorage.setItem(ownerSalonIdKey, ownerSalon.id);
+          }
+        } else if (storedSalonId) {
+            // If not found by ownerUid but was in localStorage, clear it as it might be stale.
+            localStorage.removeItem(storedSalonId);
+        }
+      }).catch(err => {
+        console.error("Error fetching salon details:", err);
+        toast({ title: "Error", description: "Could not fetch your salon details.", variant: "destructive" });
+      }).finally(() => setIsLoadingData(false));
 
-      if (storedSalonId) {
-        getSalonById(storedSalonId)
-          .then(currentSalon => {
-            if (currentSalon) {
-              setSalonDetails(currentSalon);
-              setSalonIdToUpdate(currentSalon.id);
-              setSelectedServices(currentSalon.services || []);
-              setSelectedOperatingHours(currentSalon.operatingHours || []);
-              setSelectedAmenities(currentSalon.amenities || []);
-            } else {
-              localStorage.removeItem(ownerSalonIdKey!);
-            }
-          })
-          .catch(err => {
-            console.error("Error fetching salon details by stored ID:", err);
-            toast({ title: "Error", description: "Could not fetch your salon details.", variant: "destructive" });
-          })
-          .finally(() => setIsLoadingData(false));
-      } else {
-        setIsLoadingData(false);
-      }
     } else if (!user && !authLoading) {
-        router.push('/auth/login');
+      router.push('/auth/login');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, role, user, router]);
-
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -126,47 +129,60 @@ export default function MySalonPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!user) {
-        toast({ title: "Error", description: "User not found. Please log in again.", variant: "destructive" });
+    if (!user || !user.firebaseUid) {
+      toast({ title: "Authentication Error", description: "User not found. Please log in again.", variant: "destructive" });
+      return;
+    }
+    if (selectedServices.length === 0) {
+        toast({ title: "Validation Error", description: "Please select at least one service category.", variant: "destructive" });
         return;
     }
     setIsSubmitting(true);
 
-    const finalSalonData = {
+    const finalSalonData: Partial<Salon> = {
       ...salonDetails,
-      name: salonDetails.name || 'My Salon',
-      location: salonDetails.location || 'Default Location',
+      ownerUid: user.firebaseUid, // Ensure ownerUid is set from the authenticated user
+      name: salonDetails.name || 'My Salon', // Default if empty
+      location: salonDetails.location || 'Default Location', // Default if empty
       services: selectedServices,
       operatingHours: selectedOperatingHours,
       amenities: selectedAmenities,
-      rating: salonDetails.rating || Math.floor(Math.random() * 2) + 3.5, // Random rating between 3.5 and 4.5 for new
+      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Random rating 3.5-5.0
       image: salonDetails.image || `https://placehold.co/1200x800.png`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
     
-    const validationSchema = salonIdToUpdate ? SalonSchema : SalonSchema.omit({ id: true });
-    const validationResult = validationSchema.safeParse(
-      salonIdToUpdate ? { ...finalSalonData, id: salonIdToUpdate } : finalSalonData
-    );
-
-    if (!validationResult.success) {
-      const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
-      toast({ title: "Validation Error", description: errorMessages, variant: "destructive" });
-      setIsSubmitting(false);
-      return;
-    }
-
     let result;
-    if (salonIdToUpdate) {
-      result = await updateSalon({ ...validationResult.data, id: salonIdToUpdate } as Salon);
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { id, ...dataToAdd } = validationResult.data as Salon; 
-      result = await addSalon(dataToAdd);
+    if (salonIdToUpdate) { // If updating an existing salon
+      const dataToUpdate: Salon = { ...finalSalonData, id: salonIdToUpdate } as Salon;
+      const validationResult = SalonSchema.safeParse(dataToUpdate);
+      if (!validationResult.success) {
+        const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
+        toast({ title: "Validation Error", description: errorMessages, variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
+      result = await updateSalon(validationResult.data);
+    } else { // If creating a new salon
+      // Explicitly cast to ensure ownerUid is present as per Omit<Salon, 'id'>
+      const dataToAdd: Omit<Salon, 'id'> = finalSalonData as Omit<Salon, 'id'>;
+       if (!dataToAdd.ownerUid) { // Final check, though user.firebaseUid should cover this
+          toast({ title: "Error", description: "Owner information is missing.", variant: "destructive" });
+          setIsSubmitting(false);
+          return;
+       }
+      const validationResult = SalonSchema.omit({ id: true }).safeParse(dataToAdd);
+      if (!validationResult.success) {
+        const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
+        toast({ title: "Validation Error", description: errorMessages, variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
+      result = await addSalon(validationResult.data);
     }
 
     if (result.success && result.salon) {
-      toast({ title: salonIdToUpdate ? "Salon Updated" : "Salon Created", description: `Your salon details for "${result.salon.name}" have been saved.` });
+      toast({ title: salonIdToUpdate ? "Salon Updated" : "Salon Created", description: `Salon details for "${result.salon.name}" have been saved.` });
       setSalonDetails(result.salon);
       setSalonIdToUpdate(result.salon.id);
       setSelectedServices(result.salon.services || []);
@@ -175,9 +191,8 @@ export default function MySalonPage() {
       
       const ownerSalonIdKey = getOwnerSalonIdKey();
       if (ownerSalonIdKey) {
-          localStorage.setItem(ownerSalonIdKey, result.salon.id);
+        localStorage.setItem(ownerSalonIdKey, result.salon.id);
       }
-
     } else {
       toast({ title: "Error", description: result.error || "Could not save salon details.", variant: "destructive" });
     }
@@ -185,7 +200,11 @@ export default function MySalonPage() {
   };
   
   if (authLoading || isLoadingData) {
-    return <div className="container mx-auto p-8">Loading salon details...</div>;
+    return (
+      <div className="container mx-auto p-8 flex justify-center items-center min-h-[calc(100vh-200px)]">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
   }
   if (role !== 'owner') {
      return <div className="container mx-auto p-8">Access Denied. Redirecting...</div>;
@@ -196,10 +215,10 @@ export default function MySalonPage() {
       <header className="mb-10 flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-primary flex items-center">
-            <Building className="mr-3 h-10 w-10" /> {salonIdToUpdate ? 'Manage Your Salon' : 'Create Your Salon'}
+            <Building className="mr-3 h-10 w-10" /> {salonIdToUpdate ? 'Manage Your Salon' : 'Create Your Salon Profile'}
           </h1>
           <p className="mt-2 text-lg text-muted-foreground">
-            {salonIdToUpdate ? 'Update your salon\'s information that customers will see.' : 'Add your salon to SalonFlow to start getting bookings.'}
+            {salonIdToUpdate ? 'Update your salon\'s information that customers will see.' : 'Showcase your salon on SalonFlow to attract bookings.'}
           </p>
         </div>
         <Button asChild variant="outline">
@@ -213,7 +232,7 @@ export default function MySalonPage() {
       <Card className="max-w-3xl mx-auto shadow-xl">
         <CardHeader>
           <CardTitle>Salon Information</CardTitle>
-          <CardDescription>Fill in the details below. Fields marked with * are recommended.</CardDescription>
+          <CardDescription>Fill in the details below. Fields marked with * are essential.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-6">
@@ -257,14 +276,14 @@ export default function MySalonPage() {
                         onCheckedChange={() => handleCheckboxChange(service, selectedServices, setSelectedServices)}
                         aria-label={service}
                       />
-                      <Label htmlFor={`service-${service.replace(/\s+/g, '-')}`} className="font-normal text-sm">
+                      <Label htmlFor={`service-${service.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
                         {service}
                       </Label>
                     </div>
                   ))}
                 </div>
               </ScrollArea>
-               {selectedServices.length === 0 && <p className="text-xs text-destructive">Please select at least one service category.</p>}
+               {selectedServices.length === 0 && <p className="text-xs text-destructive">Please select at least one service category your salon offers.</p>}
             </div>
             
             <Separator className="my-4" />
@@ -281,7 +300,7 @@ export default function MySalonPage() {
                         onCheckedChange={() => handleCheckboxChange(hours, selectedOperatingHours, setSelectedOperatingHours)}
                         aria-label={hours}
                       />
-                      <Label htmlFor={`hours-${hours.replace(/\s+/g, '-')}`} className="font-normal text-sm">
+                      <Label htmlFor={`hours-${hours.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
                         {hours}
                       </Label>
                     </div>
@@ -304,7 +323,7 @@ export default function MySalonPage() {
                         onCheckedChange={() => handleCheckboxChange(amenity, selectedAmenities, setSelectedAmenities)}
                         aria-label={amenity}
                       />
-                      <Label htmlFor={`amenity-${amenity.replace(/\s+/g, '-')}`} className="font-normal text-sm">
+                      <Label htmlFor={`amenity-${amenity.replace(/\s+/g, '-')}`} className="font-normal text-sm cursor-pointer">
                         {amenity}
                       </Label>
                     </div>
@@ -314,7 +333,8 @@ export default function MySalonPage() {
             </div>
 
             <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || selectedServices.length === 0}>
-              <Save className="mr-2 h-5 w-5" /> {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create Salon')}
+              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
+              {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create My Salon')}
             </Button>
           </CardContent>
         </form>

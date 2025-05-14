@@ -46,8 +46,8 @@ export type StaffMember = z.infer<typeof StaffSchema>;
 export const BookingSchema = z.object({
   id: z.string().min(1, "ID is required."),
   salonId: z.string().min(1, "Salon ID for the booking is required."),
-  customerName: z.string().min(2, "Customer name must be at least 2 characters long."),
-  customerEmail: z.string().email("Invalid customer email address.").optional(), // Email of the customer who booked
+  customerName: z.string().min(1, "Customer name is required"),
+  customerEmail: z.string().email("Invalid customer email address."), // Email of the customer who booked
   service: z.string().min(1, "Service selection is required."), // This will be service name
   date: z.string().min(1, "Date is required."),
   time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:MM)."),
@@ -59,7 +59,7 @@ export type Booking = z.infer<typeof BookingSchema>;
 // Salon Schema (for salonActions.ts)
 export const SalonSchema = z.object({
   id: z.string(),
-  ownerUid: z.string().optional(), // Firebase Auth UID of the owner
+  ownerUid: z.string().min(1, "Owner UID is required."), // Firebase Auth UID of the owner
   name: z.string().min(1, "Salon name is required."),
   location: z.string().min(1, "Salon location is required."),
   rating: z.number().min(0).max(5).optional().default(0),
