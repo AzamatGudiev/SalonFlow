@@ -22,7 +22,9 @@ export function useAuth() {
 
   useEffect(() => {
     if (!firebaseAuthInstance) {
-      console.error("useAuth: Firebase auth instance from '@/lib/firebase' is not available. Firebase might not have initialized correctly due to missing/incorrect environment variables on your hosting platform.");
+      if (typeof window !== 'undefined') { // Only log on client
+          console.error("useAuth: Firebase auth instance from '@/lib/firebase' is not available. Firebase might not have initialized correctly due to missing/incorrect environment variables on your hosting platform or an issue in firebase.ts.");
+      }
       setIsLoading(false);
       return;
     } else {
@@ -33,6 +35,7 @@ export function useAuth() {
 
     const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
+        // Attempt to fetch user profile from Firestore
         const profileResult = await getUserProfile(firebaseUser.uid);
         if (profileResult.success && profileResult.profile) {
           setAuthUser({ 
@@ -40,13 +43,19 @@ export function useAuth() {
             firebaseUid: firebaseUser.uid 
           });
         } else {
-          console.warn("useAuth: User profile not found for UID:", firebaseUser.uid, "Error:", profileResult.error);
-          // User exists in Firebase Auth but not in 'users' collection or error fetching.
-          // Signing out to ensure consistent state.
-          await firebaseSignOut(firebaseAuthInstance);
-          setAuthUser(null);
+          // Profile not found in Firestore or error fetching.
+          // This can happen during signup if Firestore write is slower than this check.
+          // Instead of signing out immediately, we'll log the warning and set authUser to null.
+          // The user is still authenticated with Firebase Auth.
+          // If it's a new signup, the profile should appear shortly.
+          // If it's an existing user and profile is missing, it's a data integrity issue.
+          console.warn(`useAuth: User profile not found or failed to fetch for UID: ${firebaseUser.uid}. Error: ${profileResult.error}. The user is authenticated with Firebase Auth, but their Firestore profile is missing or inaccessible. This might be a temporary state during signup, or a data issue for existing users.`);
+          setAuthUser(null); // Clear local authUser state, but DONT sign out of Firebase Auth here.
+                             // This allows the signup process to complete the Firestore profile write.
+                             // If redirect to dashboard still fails, it means profile was not created successfully.
         }
       } else {
+        // No Firebase user (logged out)
         setAuthUser(null);
       }
       setIsLoading(false);
@@ -60,12 +69,17 @@ export function useAuth() {
     if (firebaseAuthInstance) {
       try {
         await firebaseSignOut(firebaseAuthInstance);
-        router.push('/auth/login');
+        // onAuthStateChanged will set authUser to null and isLoading to false
+        router.push('/auth/login'); 
       } catch (error) {
         console.error("Error signing out: ", error);
+        // Even if sign out fails, clear local state and attempt redirect
+        setAuthUser(null);
+        setIsLoading(false);
+        router.push('/auth/login');
       }
-      // onAuthStateChanged will set isLoading to false eventually
     } else {
+        // Fallback if firebaseAuthInstance was never available
         setAuthUser(null);
         setIsLoading(false);
         router.push('/auth/login');
@@ -78,7 +92,6 @@ export function useAuth() {
     isLoggedIn: !!authUser, 
     isLoading, 
     logout,
-    // Expose the raw auth instance for direct checks if needed elsewhere, though typically not used by components.
     rawAuthLoaded: !!firebaseAuthInstance 
   };
 }
