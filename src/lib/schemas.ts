@@ -32,9 +32,10 @@ export const StaffSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters long."),
   role: z.string().min(2, "Role must be at least 2 characters long."),
   email: z.string().email("Invalid email address."),
-  avatar: z.string().url("Invalid URL for avatar.").optional().or(z.literal('')), // Optional, can be empty string
-  initials: z.string().min(1).max(2, "Initials should be 1 or 2 characters.").optional(), // Will be auto-generated if not provided
+  avatar: z.string().url("Invalid URL for avatar.").optional().or(z.literal('')),
+  initials: z.string().min(1).max(2, "Initials should be 1 or 2 characters.").optional(),
   aiHint: z.string().optional(),
+  providedServices: z.array(z.string()).optional().default([]), // Array of service names
 });
 export type StaffMember = z.infer<typeof StaffSchema>;
 
@@ -43,10 +44,10 @@ export type StaffMember = z.infer<typeof StaffSchema>;
 export const BookingSchema = z.object({
   id: z.string().min(1, "ID is required."),
   customerName: z.string().min(2, "Customer name must be at least 2 characters long."),
-  service: z.string().min(1, "Service selection is required."),
-  date: z.string().min(1, "Date is required."), // Should be ISO date string e.g. "2024-12-31"
-  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:MM)."), // HH:MM format
-  staff: z.string().optional(),
+  service: z.string().min(1, "Service selection is required."), // This will be service name
+  date: z.string().min(1, "Date is required."), 
+  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Invalid time format (HH:MM)."),
+  staff: z.string().optional(), // This will be staff member's name
   notes: z.string().max(500, "Notes cannot exceed 500 characters.").optional(),
 });
 export type Booking = z.infer<typeof BookingSchema>;

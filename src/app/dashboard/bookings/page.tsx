@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, PlusCircle, CalendarDays, Edit2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -38,14 +38,17 @@ import {
   TableCaption
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BookingSchema, type Booking, type StaffMember } from '@/lib/schemas';
+import { BookingSchema, type Booking, type StaffMember, type Service } from '@/lib/schemas';
 import { getBookings, addBooking, updateBooking, deleteBooking } from '@/app/actions/bookingActions';
 import { getStaffMembers } from '@/app/actions/staffActions';
+import { getServices } from '@/app/actions/serviceActions';
 
 export default function BookingsPage() {
   const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
+  const [allStaff, setAllStaff] = useState<StaffMember[]>([]);
+  const [availableServices, setAvailableServices] = useState<Service[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
@@ -54,7 +57,7 @@ export default function BookingsPage() {
 
   // Form state
   const [customerName, setCustomerName] = useState('');
-  const [service, setService] = useState('');
+  const [selectedServiceName, setSelectedServiceName] = useState(''); // Stores name of selected service
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState(''); // Stores ID of selected staff
@@ -64,15 +67,17 @@ export default function BookingsPage() {
     async function fetchInitialData() {
       setIsLoading(true);
       try {
-        const [fetchedBookings, fetchedStaff] = await Promise.all([
+        const [fetchedBookings, fetchedStaff, fetchedServices] = await Promise.all([
           getBookings(),
-          getStaffMembers()
+          getStaffMembers(),
+          getServices()
         ]);
         setBookings(fetchedBookings);
-        setAvailableStaff(fetchedStaff);
+        setAllStaff(fetchedStaff.map(s => ({ ...s, providedServices: s.providedServices || [] })));
+        setAvailableServices(fetchedServices);
       } catch (error) {
         console.error("Error fetching initial data:", error);
-        toast({ title: "Error fetching data", description: "Could not load bookings or staff.", variant: "destructive" });
+        toast({ title: "Error fetching data", description: "Could not load bookings, staff, or services.", variant: "destructive" });
       } finally {
         setIsLoading(false);
       }
@@ -80,8 +85,15 @@ export default function BookingsPage() {
     fetchInitialData();
   }, [toast]);
 
+  const filteredStaffForSelectedService = useMemo(() => {
+    if (!selectedServiceName) return allStaff; // Show all if no service selected
+    return allStaff.filter(staff => 
+      staff.providedServices?.includes(selectedServiceName)
+    );
+  }, [selectedServiceName, allStaff]);
+
   const resetForm = () => {
-    setCustomerName(''); setService(''); setDate(''); setTime(''); setSelectedStaffId(''); setNotes('');
+    setCustomerName(''); setSelectedServiceName(''); setDate(''); setTime(''); setSelectedStaffId(''); setNotes('');
     setCurrentBookingToEdit(null);
   };
 
@@ -93,10 +105,10 @@ export default function BookingsPage() {
   const handleOpenEditDialog = (booking: Booking) => {
     setCurrentBookingToEdit(booking);
     setCustomerName(booking.customerName);
-    setService(booking.service);
+    setSelectedServiceName(booking.service); // Service name
     setDate(booking.date); 
     setTime(booking.time);
-    const staffMember = availableStaff.find(s => s.name === booking.staff);
+    const staffMember = allStaff.find(s => s.name === booking.staff); // Match by name
     setSelectedStaffId(staffMember ? staffMember.id : '');
     setNotes(booking.notes || '');
     setIsAddEditDialogOpen(true);
@@ -106,12 +118,12 @@ export default function BookingsPage() {
     event.preventDefault();
     setIsSubmitting(true);
     
-    const staffMember = availableStaff.find(s => s.id === selectedStaffId);
-    const staffNameToSave = staffMember ? staffMember.name : undefined;
+    const staffMember = allStaff.find(s => s.id === selectedStaffId); // Find by ID
+    const staffNameToSave = staffMember ? staffMember.name : undefined; // Save name
 
     const bookingDataInput = { 
         customerName, 
-        service, 
+        service: selectedServiceName, // Save service name
         date, 
         time, 
         staff: staffNameToSave,
@@ -270,10 +282,24 @@ export default function BookingsPage() {
                 <Label htmlFor="customerName">Customer Name</Label>
                 <Input id="customerName" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="e.g., John Doe" aria-label="Customer Name" required/>
               </div>
+              
               <div className="space-y-1.5">
-                <Label htmlFor="service">Service</Label>
-                <Input id="service" value={service} onChange={(e) => setService(e.target.value)} placeholder="e.g., Haircut, Manicure" aria-label="Service" required/>
+                <Label htmlFor="service-select">Service</Label>
+                <Select value={selectedServiceName} onValueChange={(value) => { setSelectedServiceName(value); setSelectedStaffId(''); /* Reset staff on service change */ }}>
+                  <SelectTrigger id="service-select" aria-label="Service" disabled={availableServices.length === 0}>
+                    <SelectValue placeholder={availableServices.length > 0 ? "Select a service" : "No services available"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableServices.map((service) => (
+                      <SelectItem key={service.id} value={service.name}>
+                        {service.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                 {availableServices.length === 0 && <p className="text-xs text-muted-foreground">Please add services in the 'Manage Services' section first.</p>}
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="date">Date</Label>
@@ -284,22 +310,26 @@ export default function BookingsPage() {
                   <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time" required/>
                 </div>
               </div>
+              
               <div className="space-y-1.5">
                 <Label htmlFor="staff-select">Staff Member (Optional)</Label>
-                <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                <Select value={selectedStaffId} onValueChange={setSelectedStaffId} disabled={!selectedServiceName || filteredStaffForSelectedService.length === 0}>
                   <SelectTrigger id="staff-select" aria-label="Staff Member">
-                    <SelectValue placeholder="Select a staff member" />
+                    <SelectValue placeholder={!selectedServiceName ? "Select a service first" : (filteredStaffForSelectedService.length > 0 ? "Select available staff" : "No staff for this service")} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Any Available</SelectItem>
-                    {availableStaff.map((staffMember) => (
+                    {filteredStaffForSelectedService.map((staffMember) => (
                       <SelectItem key={staffMember.id} value={staffMember.id}>
                         {staffMember.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {!selectedServiceName && <p className="text-xs text-muted-foreground">Please select a service to see available staff.</p>}
+                {selectedServiceName && filteredStaffForSelectedService.length === 0 && <p className="text-xs text-muted-foreground">No staff members are configured to provide the selected service.</p>}
               </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="notes">Notes (Optional)</Label>
                 <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any specific requests or preferences..." aria-label="Notes" />
@@ -307,7 +337,7 @@ export default function BookingsPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting}>
+              <Button type="submit" disabled={isSubmitting || !selectedServiceName || availableServices.length === 0}>
                 {isSubmitting ? (currentBookingToEdit ? 'Saving...' : 'Adding...') : 'Save Booking'}
               </Button>
             </DialogFooter>

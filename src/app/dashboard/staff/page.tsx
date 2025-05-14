@@ -1,9 +1,8 @@
-
 'use client';
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, UserPlus, Edit, Trash2 } from "lucide-react";
+import { ArrowLeft, UserPlus, Edit, Trash2, Wrench } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -28,8 +27,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { StaffSchema, type StaffMember } from '@/lib/schemas';
-import { getStaffMembers, addStaffMember, updateStaffMember, deleteStaffMember } from '@/app/actions/staffActions';
+import { Checkbox } from "@/components/ui/checkbox";
+import { StaffSchema, type StaffMember, type Service } from '@/lib/schemas';
+import { getStaffMembers, addStaffMember, updateStaffMember, deleteStaffMember, type AddStaffInput } from '@/app/actions/staffActions';
+import { getServices } from '@/app/actions/serviceActions'; // To fetch available services
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 function generateInitials(name: string): string {
   if (!name) return '??';
@@ -47,7 +49,9 @@ function generateInitials(name: string): string {
 export default function StaffPage() {
   const { toast } = useToast();
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [availableServices, setAvailableServices] = useState<Service[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddEditDialogOpen, setIsAddEditDialogOpen] = useState(false);
   const [currentStaffToEdit, setCurrentStaffToEdit] = useState<StaffMember | null>(null);
   const [staffToDelete, setStaffToDelete] = useState<StaffMember | null>(null);
@@ -57,21 +61,26 @@ export default function StaffPage() {
   const [role, setRole] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
 
   useEffect(() => {
-    async function fetchStaff() {
+    async function fetchInitialData() {
       setIsLoading(true);
       try {
-        const fetchedStaff = await getStaffMembers();
-        setStaffList(fetchedStaff.map(staff => ({...staff, initials: generateInitials(staff.name)})));
+        const [fetchedStaff, fetchedServices] = await Promise.all([
+          getStaffMembers(),
+          getServices()
+        ]);
+        setStaffList(fetchedStaff.map(staff => ({...staff, initials: generateInitials(staff.name), providedServices: staff.providedServices || [] })));
+        setAvailableServices(fetchedServices);
       } catch (error) {
-        toast({ title: "Error fetching staff", description: "Could not load staff members.", variant: "destructive" });
+        toast({ title: "Error fetching data", description: "Could not load staff or services.", variant: "destructive" });
       } finally {
         setIsLoading(false);
       }
     }
-    fetchStaff();
+    fetchInitialData();
   }, [toast]);
 
   const resetForm = () => {
@@ -79,6 +88,7 @@ export default function StaffPage() {
     setRole('');
     setEmail('');
     setAvatarUrl('');
+    setSelectedServices([]);
     setCurrentStaffToEdit(null);
   };
 
@@ -93,42 +103,39 @@ export default function StaffPage() {
     setRole(staff.role);
     setEmail(staff.email);
     setAvatarUrl(staff.avatar || '');
+    setSelectedServices(staff.providedServices || []);
     setIsAddEditDialogOpen(true);
+  };
+
+  const handleServiceSelectionChange = (serviceName: string, checked: boolean) => {
+    setSelectedServices(prev =>
+      checked ? [...prev, serviceName] : prev.filter(s => s !== serviceName)
+    );
   };
 
   const handleSaveStaff = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setIsSubmitting(true);
     
-    const staffDataInput = {
+    const staffDataInput: AddStaffInput = {
       name,
       role,
       email,
       avatar: avatarUrl || undefined,
+      providedServices: selectedServices,
     };
-    
-    // Client-side validation (optional, as server action will also validate)
-    const clientValidation = currentStaffToEdit
-      ? StaffSchema.safeParse({ ...staffDataInput, id: currentStaffToEdit.id, initials: generateInitials(name), aiHint: name.split(' ')[0]?.toLowerCase() || 'person' })
-      : StaffSchema.omit({id: true, initials: true, aiHint: true}).safeParse(staffDataInput);
-
-    if (!clientValidation.success) {
-      const errors = clientValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(", ");
-      toast({ title: "Validation Error", description: errors, variant: "destructive" });
-      return;
-    }
-    
-    setIsLoading(true);
+        
     if (currentStaffToEdit) {
       const dataToUpdate: StaffMember = {
-        ...currentStaffToEdit,
+        id: currentStaffToEdit.id,
+        initials: generateInitials(name), // Regenerate initials in case name changed
+        aiHint: name.split(' ')[0]?.toLowerCase() || 'person', // Regenerate hint
         ...staffDataInput,
         avatar: staffDataInput.avatar || `https://placehold.co/100x100.png?text=${generateInitials(name)}`,
-        initials: generateInitials(name),
-        aiHint: name.split(' ')[0]?.toLowerCase() || 'person',
       };
       const result = await updateStaffMember(dataToUpdate);
       if (result.success && result.staffMember) {
-        setStaffList(prevStaff => prevStaff.map(s => s.id === result.staffMember!.id ? result.staffMember! : s));
+        setStaffList(prevStaff => prevStaff.map(s => s.id === result.staffMember!.id ? {...result.staffMember, providedServices: result.staffMember!.providedServices || []} : s));
         toast({ title: "Staff Updated", description: `"${result.staffMember.name}" has been updated.` });
       } else {
         toast({ title: "Update Failed", description: result.error || "Could not update staff member.", variant: "destructive" });
@@ -136,13 +143,13 @@ export default function StaffPage() {
     } else {
       const result = await addStaffMember(staffDataInput);
       if (result.success && result.staffMember) {
-        setStaffList(prevStaff => [result.staffMember!, ...prevStaff]);
+        setStaffList(prevStaff => [{...result.staffMember!, providedServices: result.staffMember!.providedServices || []}, ...prevStaff]);
         toast({ title: "Staff Added", description: `"${result.staffMember.name}" has been added.` });
       } else {
         toast({ title: "Add Failed", description: result.error || "Could not add staff member.", variant: "destructive" });
       }
     }
-    setIsLoading(false);
+    setIsSubmitting(false);
     setIsAddEditDialogOpen(false);
     resetForm();
   };
@@ -153,9 +160,9 @@ export default function StaffPage() {
 
   const confirmDeleteStaff = async () => {
     if (staffToDelete) {
-      setIsLoading(true);
+      setIsSubmitting(true);
       const result = await deleteStaffMember(staffToDelete.id);
-      setIsLoading(false);
+      setIsSubmitting(false);
       if (result.success) {
         setStaffList(staffList.filter(s => s.id !== staffToDelete.id));
         toast({ title: "Staff Deleted", description: `"${staffToDelete.name}" has been removed.`, variant: "default" });
@@ -167,7 +174,7 @@ export default function StaffPage() {
   };
   
   const handleCloseDialog = () => {
-    if (isLoading) return;
+    if (isSubmitting) return;
     setIsAddEditDialogOpen(false);
     resetForm();
   }
@@ -178,7 +185,7 @@ export default function StaffPage() {
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-primary">Manage Staff</h1>
           <p className="mt-2 text-lg text-muted-foreground">
-            Add, edit, or manage your salon staff members.
+            Add, edit, or manage your salon staff members and their services.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -195,7 +202,7 @@ export default function StaffPage() {
             <CardTitle>Salon Staff</CardTitle>
             <CardDescription>List of all staff members.</CardDescription>
           </div>
-          <Button onClick={handleOpenAddDialog} disabled={isLoading}>
+          <Button onClick={handleOpenAddDialog} disabled={isLoading || isSubmitting}>
             <UserPlus className="mr-2 h-4 w-4" />
             Add New Staff
           </Button>
@@ -217,14 +224,26 @@ export default function StaffPage() {
                       <CardDescription className="text-muted-foreground">{staff.role}</CardDescription>
                     </div>
                   </CardHeader>
-                  <CardContent className="flex-grow p-4">
+                  <CardContent className="flex-grow p-4 space-y-2">
                     <p className="text-sm text-muted-foreground break-all">{staff.email}</p>
+                    {staff.providedServices && staff.providedServices.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-1">Services:</h4>
+                        <div className="flex flex-wrap gap-1">
+                          {staff.providedServices.map(service => (
+                            <span key={service} className="text-xs bg-secondary text-secondary-foreground px-1.5 py-0.5 rounded-full border border-border">
+                              {service}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                   <CardFooter className="p-4 pt-0 flex justify-end gap-2 border-t mt-auto">
-                     <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(staff)} disabled={isLoading}>
+                     <Button variant="ghost" size="sm" onClick={() => handleOpenEditDialog(staff)} disabled={isSubmitting}>
                         <Edit className="mr-2 h-4 w-4" /> Edit
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleOpenDeleteDialog(staff)} disabled={isLoading}>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleOpenDeleteDialog(staff)} disabled={isSubmitting}>
                         <Trash2 className="mr-2 h-4 w-4" /> Delete
                     </Button>
                   </CardFooter>
@@ -243,11 +262,11 @@ export default function StaffPage() {
 
       {/* Add/Edit Staff Dialog */}
       <Dialog open={isAddEditDialogOpen} onOpenChange={(isOpen) => {
-        if (isLoading) return;
+        if (isSubmitting) return;
         setIsAddEditDialogOpen(isOpen);
         if (!isOpen) resetForm();
        }}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSaveStaff}>
             <DialogHeader>
               <DialogTitle>{currentStaffToEdit ? 'Edit Staff Member' : 'Add New Staff Member'}</DialogTitle>
@@ -273,17 +292,34 @@ export default function StaffPage() {
                 <Input id="staff-avatar" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://placehold.co/100x100.png" aria-label="Staff Avatar URL"/>
                 <p className="text-xs text-muted-foreground">If not provided, a placeholder will be used based on initials.</p>
               </div>
+              <div className="space-y-2">
+                <Label>Provided Services</Label>
+                <ScrollArea className="h-32 w-full rounded-md border p-2">
+                  {availableServices.length > 0 ? availableServices.map(service => (
+                    <div key={service.id} className="flex items-center space-x-2 mb-1.5">
+                      <Checkbox
+                        id={`service-${service.id}`}
+                        checked={selectedServices.includes(service.name)}
+                        onCheckedChange={(checked) => handleServiceSelectionChange(service.name, !!checked)}
+                      />
+                      <Label htmlFor={`service-${service.id}`} className="text-sm font-normal">
+                        {service.name}
+                      </Label>
+                    </div>
+                  )) : <p className="text-xs text-muted-foreground">No services available. Add services first.</p>}
+                </ScrollArea>
+              </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isLoading}>Cancel</Button>
-              <Button type="submit" disabled={isLoading}>{isLoading ? (currentStaffToEdit ? 'Saving...' : 'Adding...') : 'Save Staff Member'}</Button>
+              <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
+              <Button type="submit" disabled={isSubmitting || (availableServices.length === 0 && !currentStaffToEdit?.providedServices?.length )}>{isSubmitting ? (currentStaffToEdit ? 'Saving...' : 'Adding...') : 'Save Staff Member'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!staffToDelete} onOpenChange={(open) => {if (isLoading) return; !open && setStaffToDelete(null)}}>
+      <AlertDialog open={!!staffToDelete} onOpenChange={(open) => {if (isSubmitting) return; !open && setStaffToDelete(null)}}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
@@ -292,9 +328,9 @@ export default function StaffPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setStaffToDelete(null)} disabled={isLoading}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteStaff} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isLoading}>
-              {isLoading ? 'Deleting...' : 'Delete'}
+            <AlertDialogCancel onClick={() => setStaffToDelete(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteStaff} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isSubmitting}>
+              {isSubmitting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

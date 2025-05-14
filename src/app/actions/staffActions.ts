@@ -40,14 +40,14 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
     const staffList: StaffMember[] = [];
     querySnapshot.forEach((doc) => {
       const data = doc.data();
-      // Ensure initials and aiHint are present, generate if not (for older data perhaps)
       const name = data.name || '';
       const staffMember = StaffSchema.safeParse({ 
         ...data, 
         id: doc.id,
         initials: data.initials || generateInitials(name),
         aiHint: data.aiHint || name.split(' ')[0]?.toLowerCase() || 'person',
-        avatar: data.avatar || `https://placehold.co/100x100.png?text=${data.initials || generateInitials(name)}`
+        avatar: data.avatar || `https://placehold.co/100x100.png?text=${data.initials || generateInitials(name)}`,
+        providedServices: data.providedServices || [], // Ensure providedServices is an array
       });
       if (staffMember.success) {
         staffList.push(staffMember.data);
@@ -62,10 +62,11 @@ export async function getStaffMembers(): Promise<StaffMember[]> {
   }
 }
 
-// Schema for adding staff (id, initials, aiHint are auto-generated or server-set)
+// Schema for adding staff, includes providedServices
 const AddStaffSchema = StaffSchema.omit({ id: true, initials: true, aiHint: true });
+export type AddStaffInput = z.infer<typeof AddStaffSchema>;
 
-export async function addStaffMember(data: z.infer<typeof AddStaffSchema>): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
+export async function addStaffMember(data: AddStaffInput): Promise<{ success: boolean; staffMember?: StaffMember; error?: string }> {
   if (!db) {
     return { success: false, error: "Firestore database is not initialized (addStaffMember)." };
   }
@@ -73,6 +74,7 @@ export async function addStaffMember(data: z.infer<typeof AddStaffSchema>): Prom
   const rawDataForValidation = {
     ...data,
     avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
+    providedServices: data.providedServices || [],
   };
 
   const validationResult = AddStaffSchema.safeParse(rawDataForValidation);
@@ -88,7 +90,6 @@ export async function addStaffMember(data: z.infer<typeof AddStaffSchema>): Prom
       ...validationResult.data,
       initials: generateInitials(validationResult.data.name),
       aiHint: validationResult.data.name.split(' ')[0]?.toLowerCase() || 'person',
-      // Avatar already handled in rawDataForValidation and passed through validationResult.data
     };
     
     const docRef = await addDoc(staffCollectionRef, dataToSave);
@@ -113,6 +114,7 @@ export async function updateStaffMember(data: StaffMember): Promise<{ success: b
     initials: generateInitials(data.name),
     aiHint: data.name.split(' ')[0]?.toLowerCase() || 'person',
     avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
+    providedServices: data.providedServices || [],
   };
   
   const validationResult = StaffSchema.safeParse(rawDataForValidation);
