@@ -17,6 +17,8 @@ let app: FirebaseApp | undefined = undefined;
 let auth: Auth | undefined = undefined;
 let db: Firestore | undefined = undefined;
 
+const isDevelopment = process.env.NODE_ENV === 'development';
+
 if (!apiKey || !projectId) {
   console.error(
     "Firebase Core Configuration Error: Missing NEXT_PUBLIC_FIREBASE_API_KEY or NEXT_PUBLIC_FIREBASE_PROJECT_ID. " +
@@ -24,7 +26,6 @@ if (!apiKey || !projectId) {
     "Firebase services will not be available."
   );
 } else {
-  // All essential configurations seem to be present
   const firebaseConfig = {
     apiKey,
     authDomain,
@@ -35,32 +36,28 @@ if (!apiKey || !projectId) {
     measurementId,
   };
 
-  // Initialize Firebase universally (works for client and server components/actions)
   if (getApps().length === 0) {
     try {
       app = initializeApp(firebaseConfig);
-      console.log("Firebase app initialized successfully.");
+      if (isDevelopment) console.log("Firebase app initialized successfully.");
     } catch (error) {
       console.error("Firebase initialization failed:", error);
-      // app remains undefined
     }
   } else {
-    app = getApp(); // Use the existing initialized app
-    console.log("Using existing Firebase app instance.");
+    app = getApp();
+    if (isDevelopment) console.log("Using existing Firebase app instance.");
   }
 
   if (app) {
     try {
-      auth = getAuth(app); // Obtain Auth instance
-      db = getFirestore(app); // Obtain Firestore instance
-      console.log("Firebase Auth and Firestore services obtained.");
+      auth = getAuth(app);
+      db = getFirestore(app);
+      if (isDevelopment) console.log("Firebase Auth and Firestore services obtained.");
     } catch (serviceError) {
       console.error("Failed to obtain Firebase Auth/Firestore services:", serviceError);
-      // auth and db might remain undefined or throw during getAuth/getFirestore
     }
   } else {
-    // This warning will now primarily trigger if initializeApp failed even with config present.
-    if (apiKey && projectId) { 
+    if (apiKey && projectId && isDevelopment) { 
         console.warn("Firebase app instance is not available even though config was provided. Auth and Firestore cannot be initialized.");
     }
   }
