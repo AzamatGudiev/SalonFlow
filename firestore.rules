@@ -4,16 +4,16 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Users:
-    // - Authenticated users can create their own user profile document.
-    // - Only the authenticated user can update their own profile.
-    // - Deletion of user profiles is disallowed from client.
-    // - TEMPORARY DEBUGGING: Allow any authenticated user to read any user profile.
-    //   REVERT to 'allow read: if request.auth != null && request.auth.uid == userId;' after testing.
+    // TEMPORARY DEBUGGING: Allow any authenticated user to create any user document,
+    // and any authenticated user to read any user document.
+    // REVERT 'create' and 'read' to stricter versions after testing.
+    // Original create: if request.auth != null && request.auth.uid == userId;
+    // Original read:   if request.auth != null && request.auth.uid == userId;
     match /users/{userId} {
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow read: if request.auth != null; // TEMPORARY DEBUGGING RULE
+      allow create: if request.auth != null; // TEMPORARY DEBUGGING
+      allow read: if request.auth != null;   // TEMPORARY DEBUGGING
       allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      allow delete: if false; // Prevent client-side deletion
     }
 
     // Salons:
@@ -53,14 +53,11 @@ service cloud.firestore {
 
       function isUserSalonOwner(userId, salonId) {
         // Check if user document exists and role is owner
-        let userDoc = get(/databases/$(database)/documents/users/$(userId));
         // Check if salon document exists and ownerUid matches userId
-        let salonDoc = get(/databases/$(database)/documents/salons/$(salonId));
-        
         return exists(/databases/$(database)/documents/users/$(userId)) &&
-               userDoc.data.role == 'owner' &&
+               get(/databases/$(database)/documents/users/$(userId)).data.role == 'owner' &&
                exists(/databases/$(database)/documents/salons/$(salonId)) &&
-               salonDoc.data.ownerUid == userId;
+               get(/databases/$(database)/documents/salons/$(salonId)).data.ownerUid == userId;
       }
 
       allow create: if request.auth != null &&
@@ -81,31 +78,25 @@ service cloud.firestore {
                        request.resource.data.customerEmail == request.auth.token.email;
 
       function isBookingCustomer() {
-        // Assumes request.auth != null (checked by calling rule)
+        // Assumes request.auth != null is checked by the calling rule
         return request.auth.token.email == resource.data.customerEmail;
       }
 
       function isOwnerOfBookedSalon() {
-        // Assumes request.auth != null (checked by calling rule)
-        // Check if user exists and is owner of the salon
-        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-        let salonDoc = get(/databases/$(database)/documents/salons/$(resource.data.salonId));
+        // Assumes request.auth != null is checked by the calling rule
         return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-               userDoc.data.role == 'owner' &&
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
                exists(/databases/$(database)/documents/salons/$(resource.data.salonId)) &&
-               salonDoc.data.ownerUid == request.auth.uid;
+               get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data.ownerUid == request.auth.uid;
       }
 
       function isStaffOfBookedSalon() {
-        // Assumes request.auth != null (checked by calling rule)
+        // Assumes request.auth != null is checked by the calling rule
         // Assumes staff document ID is their auth UID and they have a user profile with role 'staff'
-        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-        // Check if staff document exists with the correct salonId
-        let staffDoc = get(/databases/$(database)/documents/staff/$(request.auth.uid)); // Assumes staff doc ID is auth UID
         return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-               userDoc.data.role == 'staff' &&
-               exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && 
-               staffDoc.data.salonId == resource.data.salonId;
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff' &&
+               exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && // Check if staff doc exists
+               get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.salonId == resource.data.salonId;
       }
 
       allow read, update, delete: if request.auth != null &&
