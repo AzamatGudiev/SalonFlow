@@ -14,24 +14,28 @@ import type { RecommendServicesOutput } from '@/ai/flows/recommend-services';
 
 export function ServiceRecommender() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, isLoading: authIsLoading } = useAuth();
   const [customHistory, setCustomHistory] = useState('');
   const [recommendations, setRecommendations] = useState<RecommendServicesOutput | null>(null);
   const [isRecommending, setIsRecommending] = useState(false);
 
   const handleGetRecommendations = async () => {
     if (!user?.firebaseUid) {
-      toast({ title: "Error", description: "You must be logged in to get recommendations.", variant: "destructive" });
+      toast({ title: "Login Required", description: "You must be logged in to get AI recommendations.", variant: "destructive" });
       return;
     }
     setIsRecommending(true);
-    setRecommendations(null); // Clear previous recommendations
+    setRecommendations(null); 
     
     const result = await getAiServiceRecommendations(user.firebaseUid, customHistory || undefined);
     
     if (result.success && result.recommendations) {
       setRecommendations(result.recommendations);
-      toast({ title: "Recommendations Ready!", description: "AI has suggested some services for you." });
+      if (result.recommendations.recommendedServices.length > 0) {
+        toast({ title: "Recommendations Ready!", description: "AI has suggested some services for you." });
+      } else {
+         toast({ title: "Suggestions", description: result.recommendations.reasoning || "No specific recommendations found." });
+      }
     } else {
       toast({ title: "Recommendation Failed", description: result.error || "Could not fetch recommendations.", variant: "destructive" });
       setRecommendations(null);
@@ -59,10 +63,10 @@ export function ServiceRecommender() {
             value={customHistory}
             onChange={(e) => setCustomHistory(e.target.value)}
             className="mt-1"
-            disabled={isRecommending}
+            disabled={isRecommending || authIsLoading}
           />
         </div>
-        <Button onClick={handleGetRecommendations} className="w-full" disabled={isRecommending || !user}>
+        <Button onClick={handleGetRecommendations} className="w-full" disabled={isRecommending || authIsLoading || !user}>
           {isRecommending ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (

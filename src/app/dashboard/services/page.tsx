@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlusCircle, Edit, Trash2, Info, Loader2, Wrench } from "lucide-react";
+import { ArrowLeft, PlusCircle, Edit, Trash2, Loader2, Wrench } from "lucide-react";
 import Link from "next/link";
 import {
   Table,
@@ -37,14 +37,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ServiceSchema, type Service, type Salon } from '@/lib/schemas';
+import { ServiceSchema, type Service } from '@/lib/schemas';
 import { getServices, addService, updateService, deleteService } from '@/app/actions/serviceActions';
 import { getSalonById } from '@/app/actions/salonActions'; 
 import { useAuth } from "@/hooks/use-auth"; 
 import { useRouter } from "next/navigation";
 
-
-const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
+const OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX = 'owner_salon_id_';
 
 export default function ServicesPage() {
   const { toast } = useToast();
@@ -67,14 +66,14 @@ export default function ServicesPage() {
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [ownerSalonId, setOwnerSalonId] = useState<string | null>(null);
 
-  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
     if (!authIsLoading && !isLoggedIn) {
       router.push('/auth/login');
       return;
     }
-     if (!authIsLoading && isLoggedIn && role !== 'owner' && role !== 'staff') {
+     if (!authIsLoading && isLoggedIn && role !== 'owner' && role !== 'staff') { // Staff might view, but not edit unless rules allow
        router.push('/dashboard');
       return;
     }
@@ -91,21 +90,29 @@ export default function ServicesPage() {
         const key = getOwnerSalonIdKey();
         currentOwnerSalonId = key ? localStorage.getItem(key) : null;
         setOwnerSalonId(currentOwnerSalonId);
+      } else if (role === 'staff' && user) {
+        // For staff, to get categories, they need to know their salon. This needs more robust logic.
+        // For this prototype, we assume staff might use a localStorage key if they also happen to be an owner.
+        // A better approach would be to fetch staff's salonId from their profile.
+        const key = getOwnerSalonIdKey(); 
+        currentOwnerSalonId = key ? localStorage.getItem(key) : null;
+        setOwnerSalonId(currentOwnerSalonId);
       }
 
+
       try {
-        const fetchedServices = await getServices();
+        const fetchedServices = await getServices(); // Services are global but categorized by salon
         setServices(fetchedServices);
 
-        if (role === 'owner' && currentOwnerSalonId) {
+        if ((role === 'owner' || role === 'staff') && currentOwnerSalonId) {
           const salonResult = await getSalonById(currentOwnerSalonId);
           if (salonResult && salonResult.services) {
             setSalonServiceCategories(salonResult.services);
           } else {
             setSalonServiceCategories([]);
-            if (!salonResult) {
+            if (!salonResult && (role === 'owner')) { // Only show this critical error to owners
                 toast({ title: "Salon Not Found", description: "Your salon details could not be found. Please set up your salon in 'My Salon'.", variant: "destructive", duration: 7000 });
-            } else if (!salonResult.services || salonResult.services.length === 0) {
+            } else if ((!salonResult?.services || salonResult.services.length === 0) && (role === 'owner')) {
                 toast({ title: "Salon Categories Not Defined", description: "Please define service categories in 'My Salon' before adding specific services.", variant: "default", duration: 7000 });
             }
           }
@@ -121,9 +128,9 @@ export default function ServicesPage() {
         setIsLoadingCategories(false);
       }
     }
-    if (user || !role) { 
+    if (user || !role) { // Check if user object exists, or if role is still loading/undefined
         fetchPageData();
-    } else if (!user && !authIsLoading) { 
+    } else if (!user && !authIsLoading) { // If auth is done and no user, then don't fetch
         setIsLoading(false);
         setIsLoadingCategories(false);
     }
@@ -152,6 +159,10 @@ export default function ServicesPage() {
 
   const handleSaveService = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (role !== 'owner' && role !== 'staff') { // Basic check, rules are authoritative
+        toast({title: "Permission Denied", description: "You do not have permission to save services.", variant: "destructive"});
+        return;
+    }
     setIsSubmitting(true);
     
     const formData = { name, category: selectedCategory, duration, price };
@@ -194,7 +205,7 @@ export default function ServicesPage() {
   const handleOpenDeleteDialog = (service: Service) => { setServiceToDelete(service); };
 
   const confirmDeleteService = async () => {
-    if (serviceToDelete) {
+    if (serviceToDelete && (role === 'owner' || role === 'staff')) { // Basic check
       setIsSubmitting(true);
       const result = await deleteService(serviceToDelete.id);
       if (result.success) {
@@ -235,7 +246,7 @@ export default function ServicesPage() {
             <CardDescription>List of all specific services offered, categorized by your salon&apos;s service types.</CardDescription>
           </div>
           {(role === 'owner' || role === 'staff') && (
-            <Button onClick={handleOpenAddDialog} disabled={isLoading || isLoadingCategories || isSubmitting || (role ==='owner' && (!ownerSalonId || salonServiceCategories.length === 0))}>
+            <Button onClick={handleOpenAddDialog} disabled={isLoading || isLoadingCategories || isSubmitting || ((role === 'owner' || role ==='staff') && (!ownerSalonId || salonServiceCategories.length === 0))}>
               <PlusCircle className="mr-2 h-4 w-4" /> Add New Service
             </Button>
           )}
@@ -325,8 +336,8 @@ export default function ServicesPage() {
                     {salonServiceCategories.map((category) => ( <SelectItem key={category} value={category}> {category} </SelectItem> ))}
                   </SelectContent>
                 </Select>
-                {role==='owner' && salonServiceCategories.length === 0 && !isLoadingCategories && (
-                     <p className="text-xs text-muted-foreground"> Define service categories in <Link href="/dashboard/my-salon" className="text-primary underline">My Salon</Link> first. </p>
+                {(role==='owner' || role==='staff') && salonServiceCategories.length === 0 && !isLoadingCategories && (
+                     <p className="text-xs text-muted-foreground"> Define service categories in <Link href="/dashboard/my-salon" className="text-primary underline">My Salon</Link> first for owners. Staff should ensure salon is configured.</p>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -340,8 +351,8 @@ export default function ServicesPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting || isLoadingCategories || salonServiceCategories.length === 0 || !selectedCategory}>
-                {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              <Button type="submit" disabled={isSubmitting || isLoadingCategories || salonServiceCategories.length === 0 || !selectedCategory || !name || !duration || !price}>
+                {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
                 {isSubmitting ? (currentServiceToEdit ? 'Saving...' : 'Adding...') : 'Save Service'}
               </Button>
             </DialogFooter>
@@ -355,7 +366,7 @@ export default function ServicesPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setServiceToDelete(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteService} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
               {isSubmitting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -364,4 +375,3 @@ export default function ServicesPage() {
     </div>
   );
 }
-

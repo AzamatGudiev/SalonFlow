@@ -7,12 +7,12 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Label } from "@/components/ui/label";
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, MapPin, Star, CalendarDays, Tag, Clock, ShieldCheck, Loader2, Users, ConciergeBell, Edit3 } from 'lucide-react';
+import { ArrowLeft, MapPin, Star, CalendarDays, Tag, Clock, ShieldCheck, Loader2, Users, ConciergeBell, Edit3, Info } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -25,24 +25,24 @@ import { addBooking } from '@/app/actions/bookingActions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 
 export default function SalonDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, isLoading: authIsLoading } = useAuth();
 
   const [salon, setSalon] = useState<Salon | null>(null);
   const [salonServices, setSalonServices] = useState<Service[]>([]);
   const [salonStaff, setSalonStaff] = useState<StaffMember[]>([]);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingPageData, setIsLoadingPageData] = useState(true);
   const [isBookingLoading, setIsBookingLoading] = useState(false);
 
-  // Booking form state
   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(''); // Can be 'any' or a staff member ID
+  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [bookingNotes, setBookingNotes] = useState<string>('');
@@ -51,7 +51,7 @@ export default function SalonDetailPage() {
 
   useEffect(() => {
     if (salonId) {
-      setIsLoading(true);
+      setIsLoadingPageData(true);
       Promise.all([
         getSalonById(salonId),
         getServices(), 
@@ -71,10 +71,10 @@ export default function SalonDetailPage() {
         console.error("Error fetching salon details, services, or staff:", error);
         toast({ title: "Error", description: "Could not fetch salon information.", variant: "destructive" });
       }).finally(() => {
-        setIsLoading(false);
+        setIsLoadingPageData(false);
       });
     } else {
-      setIsLoading(false);
+      setIsLoadingPageData(false);
     }
   }, [salonId, toast]);
 
@@ -88,7 +88,7 @@ export default function SalonDetailPage() {
     event.preventDefault();
     if (!isLoggedIn || !user || !user.email) {
       toast({ title: "Login Required", description: "Please log in to book an appointment.", variant: "destructive" });
-      router.push('/auth/login');
+      router.push('/auth/login?redirect=/salons/' + salonId); // Optional: redirect back after login
       return;
     }
     if (!salon || !selectedServiceId || !selectedDate || !selectedTime) {
@@ -108,7 +108,7 @@ export default function SalonDetailPage() {
       service: serviceDetails?.name || 'Unknown Service',
       date: format(selectedDate, 'yyyy-MM-dd'),
       time: selectedTime,
-      staff: staffDetails?.name || (selectedStaffId === 'any' || selectedStaffId === '' ? undefined : 'Unknown Staff'), // If 'any' or empty, don't specify staff, otherwise use name.
+      staff: staffDetails?.name || (selectedStaffId === 'any' || selectedStaffId === '' ? undefined : 'Any Available'),
       notes: bookingNotes || undefined,
     };
     
@@ -121,6 +121,7 @@ export default function SalonDetailPage() {
         description: `Your appointment for ${result.booking.service} at ${salon.name} on ${format(selectedDate, 'PPP')} at ${selectedTime} is confirmed.`,
         duration: 7000,
       });
+      // Reset form fields
       setSelectedServiceId('');
       setSelectedStaffId('');
       setSelectedDate(undefined);
@@ -132,7 +133,7 @@ export default function SalonDetailPage() {
   };
 
 
-  if (isLoading) {
+  if (isLoadingPageData || authIsLoading) {
     return (
       <div className="container mx-auto py-8 px-4 animate-pulse">
         <Skeleton className="h-9 w-36 mb-6" />
@@ -209,7 +210,7 @@ export default function SalonDetailPage() {
             <div className="flex items-center mt-2">
               <Star className="h-6 w-6 text-yellow-300 fill-yellow-300 mr-1.5" />
               <span className="font-semibold text-xl text-white">{salon.rating.toFixed(1)}</span>
-              <span className="text-sm text-gray-200 ml-2">({Math.floor(Math.random() * 200) + 50} reviews)</span>
+              {/* <span className="text-sm text-gray-200 ml-2">({Math.floor(Math.random() * 200) + 50} reviews)</span> */}
             </div>
           </div>
         </div>
@@ -281,111 +282,120 @@ export default function SalonDetailPage() {
           <aside className="md:col-span-1 bg-secondary/50 p-6 md:p-8 border-l border-border">
             <div className="sticky top-24">
               <h3 className="text-2xl font-semibold text-foreground mb-6">Book Your Visit</h3>
-              <form onSubmit={handleBookAppointment} className="space-y-6">
-                <div>
-                  <Label htmlFor="service-select" className="text-sm font-medium">Service</Label>
-                  <Select 
-                    value={selectedServiceId} 
-                    onValueChange={(value) => {
-                      setSelectedServiceId(value);
-                      setSelectedStaffId(''); 
-                    }}
-                    required
-                    disabled={salonServices.length === 0}
-                  >
-                    <SelectTrigger id="service-select" className="mt-1" aria-label="Select Service">
-                      <SelectValue placeholder={salonServices.length > 0 ? "Select a service" : "No services available"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {salonServices.map(service => (
-                        <SelectItem key={service.id} value={service.id}>
-                          {service.name} ({service.duration}, {service.price})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {salonServices.length === 0 && <p className="text-xs text-muted-foreground mt-1">This salon has not listed specific services yet.</p>}
-                </div>
+              {!isLoggedIn ? (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Login Required</AlertTitle>
+                  <AlertDescription>
+                    Please <Link href={`/auth/login?redirect=/salons/${salonId}`} className="font-medium text-primary hover:underline">log in</Link> or <Link href={`/auth/signup?redirect=/salons/${salonId}`} className="font-medium text-primary hover:underline">sign up</Link> to book an appointment.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <form onSubmit={handleBookAppointment} className="space-y-6">
+                  <div>
+                    <Label htmlFor="service-select" className="text-sm font-medium">Service</Label>
+                    <Select 
+                      value={selectedServiceId} 
+                      onValueChange={(value) => {
+                        setSelectedServiceId(value);
+                        setSelectedStaffId(''); 
+                      }}
+                      required
+                      disabled={salonServices.length === 0}
+                    >
+                      <SelectTrigger id="service-select" className="mt-1" aria-label="Select Service">
+                        <SelectValue placeholder={salonServices.length > 0 ? "Select a service" : "No services available"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {salonServices.map(service => (
+                          <SelectItem key={service.id} value={service.id}>
+                            {service.name} ({service.duration}, {service.price})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {salonServices.length === 0 && <p className="text-xs text-muted-foreground mt-1">This salon has not listed specific services yet.</p>}
+                  </div>
 
-                <div>
-                  <Label htmlFor="staff-select" className="text-sm font-medium">Staff Member (Optional)</Label>
-                  <Select 
-                    value={selectedStaffId} 
-                    onValueChange={setSelectedStaffId}
-                    disabled={!selectedServiceId || availableStaffForSelectedService.length === 0}
-                  >
-                    <SelectTrigger id="staff-select" className="mt-1" aria-label="Select Staff Member">
-                      <SelectValue placeholder={
-                        !selectedServiceId ? "Select service first" :
-                        availableStaffForSelectedService.length === 0 ? "No staff for this service" :
-                        "Any Available or Select Staff"
-                      }/>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any Available</SelectItem>
-                      {availableStaffForSelectedService.map(staff => (
-                        <SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div>
+                    <Label htmlFor="staff-select" className="text-sm font-medium">Staff Member (Optional)</Label>
+                    <Select 
+                      value={selectedStaffId} 
+                      onValueChange={setSelectedStaffId}
+                      disabled={!selectedServiceId || availableStaffForSelectedService.length === 0}
+                    >
+                      <SelectTrigger id="staff-select" className="mt-1" aria-label="Select Staff Member">
+                        <SelectValue placeholder={
+                          !selectedServiceId ? "Select service first" :
+                          availableStaffForSelectedService.length === 0 ? "No staff for this service" :
+                          "Any Available or Select Staff"
+                        }/>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any Available</SelectItem>
+                        {availableStaffForSelectedService.map(staff => (
+                          <SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div>
-                  <Label htmlFor="date-select" className="text-sm font-medium">Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="date-select"
-                        variant={"outline"}
-                        className="w-full justify-start text-left font-normal mt-1"
-                        disabled={!selectedServiceId}
-                      >
-                        <CalendarDays className="mr-2 h-4 w-4" />
-                        {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={setSelectedDate}
-                        initialFocus
-                        disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() -1)) } 
+                  <div>
+                    <Label htmlFor="date-select" className="text-sm font-medium">Date</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="date-select"
+                          variant={"outline"}
+                          className="w-full justify-start text-left font-normal mt-1"
+                          disabled={!selectedServiceId}
+                        >
+                          <CalendarDays className="mr-2 h-4 w-4" />
+                          {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={selectedDate}
+                          onSelect={setSelectedDate}
+                          initialFocus
+                          disabled={(date) => date < new Date(new Date().setDate(new Date().getDate() -1)) } 
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  
+                  <div>
+                      <Label htmlFor="time-select" className="text-sm font-medium">Time</Label>
+                      <Input 
+                          id="time-select" 
+                          type="time" 
+                          value={selectedTime} 
+                          onChange={e => setSelectedTime(e.target.value)} 
+                          className="mt-1"
+                          required
+                          disabled={!selectedDate}
                       />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                
-                <div>
-                    <Label htmlFor="time-select" className="text-sm font-medium">Time</Label>
-                    <Input 
-                        id="time-select" 
-                        type="time" 
-                        value={selectedTime} 
-                        onChange={e => setSelectedTime(e.target.value)} 
-                        className="mt-1"
-                        required
-                        disabled={!selectedDate}
-                    />
-                </div>
+                  </div>
 
-                <div>
-                    <Label htmlFor="booking-notes" className="text-sm font-medium">Notes (Optional)</Label>
-                    <Textarea 
-                        id="booking-notes"
-                        value={bookingNotes}
-                        onChange={e => setBookingNotes(e.target.value)}
-                        placeholder="Any specific requests or preferences..."
-                        className="mt-1 min-h-[80px]"
-                    />
-                </div>
+                  <div>
+                      <Label htmlFor="booking-notes" className="text-sm font-medium">Notes (Optional)</Label>
+                      <Textarea 
+                          id="booking-notes"
+                          value={bookingNotes}
+                          onChange={e => setBookingNotes(e.target.value)}
+                          placeholder="Any specific requests or preferences..."
+                          className="mt-1 min-h-[80px]"
+                      />
+                  </div>
 
-                <Button type="submit" size="lg" className="w-full text-lg py-3" disabled={isBookingLoading || !selectedServiceId || !selectedDate || !selectedTime || !isLoggedIn}>
-                  {isBookingLoading ? <Loader2 className="animate-spin mr-2"/> : <Edit3 className="mr-2 h-5 w-5" />}
-                  {isLoggedIn ? 'Book Appointment' : 'Login to Book'}
-                </Button>
-                {!isLoggedIn && <p className="text-xs text-center text-muted-foreground mt-2">You need to be logged in to make a booking.</p>}
-              </form>
+                  <Button type="submit" size="lg" className="w-full text-lg py-3" disabled={isBookingLoading || !selectedServiceId || !selectedDate || !selectedTime || !isLoggedIn}>
+                    {isBookingLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4"/> : <Edit3 className="mr-2 h-5 w-5" />}
+                    Book Appointment
+                  </Button>
+                </form>
+              )}
             </div>
           </aside>
         </div>

@@ -45,17 +45,18 @@ export async function getStaffMembers(filters?: { salonId?: string }): Promise<S
     querySnapshot.forEach((document) => {
       const data = document.data();
       const name = data.name || '';
-      const staffDataWithPotentiallyMissingSalonId = { 
+      // Apply defaults for optional fields if they are missing from Firestore document
+      const staffDataWithDefaults = { 
         ...data, 
         id: document.id,
         initials: data.initials || generateInitials(name),
         aiHint: data.aiHint || name.split(' ')[0]?.toLowerCase() || 'person',
         avatar: data.avatar || `https://placehold.co/100x100.png?text=${data.initials || generateInitials(name)}`,
         providedServices: data.providedServices || [],
-        salonId: data.salonId, 
+        salonId: data.salonId, // This should exist due to schema and add/update logic
       };
 
-      const staffMember = StaffSchema.safeParse(staffDataWithPotentiallyMissingSalonId);
+      const staffMember = StaffSchema.safeParse(staffDataWithDefaults);
       
       if (staffMember.success) {
         staffList.push(staffMember.data);
@@ -78,13 +79,13 @@ export async function addStaffMember(data: AddStaffInput): Promise<{ success: bo
     return { success: false, error: "Firestore database is not initialized (addStaffMember)." };
   }
   
-  const rawDataForValidation = {
+  const dataWithDefaults = {
     ...data,
     avatar: data.avatar || `https://placehold.co/100x100.png?text=${generateInitials(data.name)}`,
     providedServices: data.providedServices || [],
   };
 
-  const validationResult = AddStaffSchema.safeParse(rawDataForValidation);
+  const validationResult = AddStaffSchema.safeParse(dataWithDefaults);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
     console.error("Validation errors (addStaffMember):", errorMessages);
@@ -105,9 +106,9 @@ export async function addStaffMember(data: AddStaffInput): Promise<{ success: bo
       id: docRef.id,
     };
     return { success: true, staffMember: newStaffMember };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error adding staff member to Firestore:", error);
-    return { success: false, error: "Failed to add staff member to the database. Please try again." };
+    return { success: false, error: error.message || "Failed to add staff member to the database. Please try again." };
   }
 }
 
@@ -116,7 +117,7 @@ export async function updateStaffMember(data: StaffMember): Promise<{ success: b
     return { success: false, error: "Firestore database is not initialized (updateStaffMember)." };
   }
 
-  const rawDataForValidation = {
+  const dataWithDefaults = {
     ...data,
     initials: generateInitials(data.name),
     aiHint: data.name.split(' ')[0]?.toLowerCase() || 'person',
@@ -124,7 +125,7 @@ export async function updateStaffMember(data: StaffMember): Promise<{ success: b
     providedServices: data.providedServices || [],
   };
   
-  const validationResult = StaffSchema.safeParse(rawDataForValidation);
+  const validationResult = StaffSchema.safeParse(dataWithDefaults);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
     console.error("Validation errors (updateStaffMember):", errorMessages);
@@ -137,9 +138,9 @@ export async function updateStaffMember(data: StaffMember): Promise<{ success: b
     const { id, ...dataToUpdate } = validationResult.data; 
     await updateDoc(staffDocRef, dataToUpdate);
     return { success: true, staffMember: validationResult.data };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error updating staff member in Firestore:", error);
-    return { success: false, error: "Failed to update staff member in the database. Please try again." };
+    return { success: false, error: error.message || "Failed to update staff member in the database. Please try again." };
   }
 }
 
@@ -155,8 +156,8 @@ export async function deleteStaffMember(id: string): Promise<{ success: boolean;
     const staffDocRef = doc(db, STAFF_COLLECTION, id);
     await deleteDoc(staffDocRef);
     return { success: true };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error deleting staff member from Firestore:", error);
-    return { success: false, error: "Failed to delete staff member from the database. Please try again." };
+    return { success: false, error: error.message || "Failed to delete staff member from the database. Please try again." };
   }
 }

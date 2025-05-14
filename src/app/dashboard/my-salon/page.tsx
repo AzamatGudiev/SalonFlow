@@ -13,9 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Save, Building, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import type { Salon, UserProfile } from '@/lib/schemas';
+import type { Salon } from '@/lib/schemas';
 import { SalonSchema } from '@/lib/schemas';
-import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions'; // Assuming getSalons can be used or a new getSalonByOwnerUid
+import { addSalon, updateSalon, getSalons } from '@/app/actions/salonActions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
@@ -59,6 +59,14 @@ export default function MySalonPage() {
 
   const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
+  const populateFormWithSalonData = useCallback((salon: Salon) => {
+    setSalonDetails(salon);
+    setSalonIdToUpdate(salon.id);
+    setSelectedServices(salon.services || []);
+    setSelectedOperatingHours(salon.operatingHours || []);
+    setSelectedAmenities(salon.amenities || []);
+  }, []);
+
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
       router.push('/auth/login');
@@ -76,21 +84,16 @@ export default function MySalonPage() {
       if (role === 'owner' && user?.firebaseUid) {
         setIsLoadingData(true);
         try {
-          // Fetch all salons and find the one owned by the current user
           const allSalons = await getSalons(); 
           const ownerSalon = allSalons.find(s => s.ownerUid === user.firebaseUid);
           
           if (ownerSalon) {
-            setSalonDetails(ownerSalon);
-            setSalonIdToUpdate(ownerSalon.id);
-            setSelectedServices(ownerSalon.services || []);
-            setSelectedOperatingHours(ownerSalon.operatingHours || []);
-            setSelectedAmenities(ownerSalon.amenities || []);
+            populateFormWithSalonData(ownerSalon);
             const ownerSalonIdKey = getOwnerSalonIdKey();
             if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, ownerSalon.id); }
           } else {
-            // No salon found for this owner, set ownerUid for new salon creation
-            setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid }));
+            setSalonDetails(prev => ({ ...prev, ownerUid: user.firebaseUid, name: '', location: '', description: '', services: [], operatingHours: [], amenities: [], image: '', rating: 0, aiHint: '' }));
+            setSelectedServices([]); setSelectedOperatingHours([]); setSelectedAmenities([]);
             setSalonIdToUpdate(null);
             const ownerSalonIdKey = getOwnerSalonIdKey();
             if (ownerSalonIdKey) { localStorage.removeItem(ownerSalonIdKey); }
@@ -102,13 +105,13 @@ export default function MySalonPage() {
           setIsLoadingData(false);
         }
       } else if (!user && !authLoading) {
-        router.push('/auth/login'); // Should be handled by previous effect, but as a safeguard
+        router.push('/auth/login');
       } else if (user && role !== 'owner' && !authLoading){
-        setIsLoadingData(false); // Not an owner, no salon to fetch
+        setIsLoadingData(false);
       }
     }
     fetchOwnerSalon();
-  }, [authLoading, role, user, router, toast, getOwnerSalonIdKey]);
+  }, [authLoading, role, user, router, toast, getOwnerSalonIdKey, populateFormWithSalonData]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -136,12 +139,12 @@ export default function MySalonPage() {
     const finalSalonDataInput = {
       ...salonDetails,
       ownerUid: user.firebaseUid, 
-      name: salonDetails.name || 'My Salon',
-      location: salonDetails.location || 'Default Location', 
+      name: salonDetails.name || 'My Salon', // Should be caught by required field
+      location: salonDetails.location || 'Default Location', // Should be caught by required field
       services: selectedServices,
       operatingHours: selectedOperatingHours, 
       amenities: selectedAmenities,
-      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Keep random rating for now
+      rating: salonDetails.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)),
       image: salonDetails.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(salonDetails.name || 'Salon')}`,
       aiHint: salonDetails.aiHint || salonDetails.name?.split(' ')[0]?.toLowerCase() || 'salon',
     };
@@ -171,11 +174,7 @@ export default function MySalonPage() {
 
     if (result.success && result.salon) {
       toast({ title: salonIdToUpdate ? "Salon Updated" : "Salon Created", description: `Salon details for "${result.salon.name}" have been saved.` });
-      setSalonDetails(result.salon);
-      setSalonIdToUpdate(result.salon.id);
-      setSelectedServices(result.salon.services || []);
-      setSelectedOperatingHours(result.salon.operatingHours || []);
-      setSelectedAmenities(result.salon.amenities || []);
+      populateFormWithSalonData(result.salon); // Repopulate form with saved data, including new ID if created
       const ownerSalonIdKey = getOwnerSalonIdKey();
       if (ownerSalonIdKey) { localStorage.setItem(ownerSalonIdKey, result.salon.id); }
     } else {
@@ -256,7 +255,7 @@ export default function MySalonPage() {
                 </div>
               </ScrollArea>
             </div>
-            <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || isLoadingData || selectedServices.length === 0}>
+            <Button type="submit" className="w-full text-lg py-6 mt-4" disabled={isSubmitting || authLoading || isLoadingData || selectedServices.length === 0 || !salonDetails.name || !salonDetails.location}>
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Save className="mr-2 h-5 w-5" />}
               {isSubmitting ? 'Saving...' : (salonIdToUpdate ? 'Save Changes' : 'Create My Salon')}
             </Button>
@@ -266,5 +265,3 @@ export default function MySalonPage() {
     </div>
   );
 }
-
-    

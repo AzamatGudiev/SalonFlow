@@ -2,7 +2,7 @@
 'use server';
 
 import { recommendServices, type RecommendServicesInput, type RecommendServicesOutput } from '@/ai/flows/recommend-services';
-import { auth } from '@/lib/firebase'; // To get current user if needed
+// import { auth } from '@/lib/firebase'; // Not strictly needed here as UID is passed
 
 export async function getAiServiceRecommendations(
   userId: string, 
@@ -12,6 +12,7 @@ export async function getAiServiceRecommendations(
     return { success: false, error: 'User ID is required for recommendations.' };
   }
 
+  // Use a default history if none is provided, or use the custom one.
   const bookingHistory = customHistory || "Customer enjoys styling services, hair treatments, and occasional manicures. Prefers modern looks.";
 
   const input: RecommendServicesInput = {
@@ -21,27 +22,23 @@ export async function getAiServiceRecommendations(
 
   try {
     const recommendations = await recommendServices(input);
-    if (recommendations && recommendations.recommendedServices?.length > 0) {
-      return { success: true, recommendations };
-    } else if (recommendations) { // Case where flow returns but no specific recs
-      return { 
-        success: true, 
-        recommendations: { 
-          ...recommendations, 
-          reasoning: recommendations.reasoning || "No specific recommendations found based on the provided information, but here are some general ideas.",
-          recommendedServices: recommendations.recommendedServices || [] // Ensure array exists
-        } 
-      };
+    
+    // Ensure the flow always returns a well-structured object even if no specific recommendations are found
+    if (recommendations) {
+        const result: RecommendServicesOutput = {
+            recommendedServices: recommendations.recommendedServices || [],
+            reasoning: recommendations.reasoning || (recommendations.recommendedServices?.length ? "Based on your input." : "No specific recommendations found, consider exploring our services!"),
+        };
+      return { success: true, recommendations: result };
     }
-    // This case should ideally not be reached if the flow always returns something
+    // This case should ideally not be reached if the flow always returns something structured.
     return { success: false, error: 'Could not generate recommendations. The AI flow might have returned an unexpected result.' };
   } catch (error: any) {
     console.error("Error calling recommendServices flow:", error);
     let errorMessage = "Failed to get AI recommendations due to an unexpected error.";
     if (error.message) {
-      errorMessage = error.message;
+      errorMessage = `AI Recommendation Error: ${error.message}`;
     }
-    // Consider more specific error handling based on Genkit error types if available
     return { success: false, error: errorMessage };
   }
 }

@@ -110,12 +110,11 @@ export async function addSalon(data: AddSalonInput): Promise<{ success: boolean;
     description: data.description || '',
     operatingHours: data.operatingHours || [],
     amenities: data.amenities || [],
-    rating: data.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)), // Keep random rating for now
+    rating: data.rating || parseFloat(((Math.random() * 1.5) + 3.5).toFixed(1)),
     aiHint: data.aiHint || data.name.split(' ')[0]?.toLowerCase() || 'salon',
     image: data.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(data.name)}`,
   };
   
-  // Validate against the schema that omits 'id'
   const validationResult = SalonSchema.omit({id: true}).safeParse(dataWithDefaults);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
@@ -145,8 +144,16 @@ export async function updateSalon(data: Salon): Promise<{ success: boolean; salo
       return { success: false, error: "Owner UID is missing in salon data for update." };
   }
 
-  // Validate the full salon object, including 'id'
-  const validationResult = SalonSchema.safeParse(data);
+   const dataWithDefaults = {
+    ...data,
+    description: data.description || '',
+    operatingHours: data.operatingHours || [],
+    amenities: data.amenities || [],
+    aiHint: data.aiHint || data.name.split(' ')[0]?.toLowerCase() || 'salon',
+    image: data.image || `https://placehold.co/1200x800.png?text=${encodeURIComponent(data.name)}`,
+  };
+
+  const validationResult = SalonSchema.safeParse(dataWithDefaults);
   if (!validationResult.success) {
     const errorMessages = JSON.stringify(validationResult.error.flatten().fieldErrors);
     console.error("Validation errors (updateSalon):", errorMessages);
@@ -155,7 +162,6 @@ export async function updateSalon(data: Salon): Promise<{ success: boolean; salo
 
   try {
     const salonDocRef = doc(db, SALONS_COLLECTION, data.id);
-    // Firestore updateDoc doesn't want the 'id' field in the data object itself
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, ...dataToUpdate } = validationResult.data; 
     await updateDoc(salonDocRef, dataToUpdate);
@@ -183,5 +189,3 @@ export async function deleteSalon(id: string): Promise<{ success: boolean; error
     return { success: false, error: error.message || "Failed to delete salon from the database. Please try again." };
   }
 }
-
-    

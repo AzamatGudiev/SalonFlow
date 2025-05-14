@@ -46,7 +46,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 
-const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
+const OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX = 'owner_salon_id_';
 
 export default function BookingsPage() {
   const { toast } = useToast();
@@ -72,7 +72,7 @@ export default function BookingsPage() {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [notes, setNotes] = useState('');
 
-  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
     if (!authIsLoading && !isLoggedIn) {
@@ -100,20 +100,29 @@ export default function BookingsPage() {
             toast({ title: "Salon Not Configured", description: "Please set up your salon in 'My Salon' to manage bookings.", variant: "default" });
         }
         setOwnerSalonId(currentOwnerSalonId);
+      } else if (role === 'staff' && user) {
+        // For staff, determine salonId. This could be from their user profile or a shared context.
+        // Using localStorage like owner for prototype simplicity.
+        const key = getOwnerSalonIdKey(); // This implies staff uses the same key logic if they are also an owner of 'a' salon.
+        currentOwnerSalonId = key ? localStorage.getItem(key) : null; // This is a simplification for staff.
+        if (!currentOwnerSalonId) {
+            toast({ title: "Salon Context Missing", description: "Cannot determine salon for staff. Please ensure salon is configured.", variant: "default" });
+        }
+        setOwnerSalonId(currentOwnerSalonId);
       }
       
 
       try {
         const [fetchedBookings, fetchedStaff, fetchedServices] = await Promise.all([
-          getBookings({ salonId: currentOwnerSalonId || undefined }), 
-          getStaffMembers({ salonId: currentOwnerSalonId || undefined }), 
-          getServices() 
+          currentOwnerSalonId ? getBookings({ salonId: currentOwnerSalonId }) : Promise.resolve([] as Booking[]), 
+          currentOwnerSalonId ? getStaffMembers({ salonId: currentOwnerSalonId }) : Promise.resolve([] as StaffMember[]), 
+          getServices() // Services are global but filtered by salon categories later
         ]);
         setBookings(fetchedBookings);
         setAllStaff(fetchedStaff.map(s => ({ ...s, providedServices: s.providedServices || [] })));
         setAvailableServices(fetchedServices);
       } catch (error: any) {
-        console.error("Error fetching initial data:", error);
+        console.error("Error fetching initial data for bookings page:", error);
         toast({ title: "Error fetching data", description: error.message || "Could not load bookings, staff, or services.", variant: "destructive" });
       } finally {
         setIsLoadingData(false);
@@ -123,7 +132,7 @@ export default function BookingsPage() {
       fetchInitialData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, toast]);
+  }, [user, role, toast, getOwnerSalonIdKey]);
 
   const filteredStaffForSelectedService = useMemo(() => {
     if (!selectedServiceId) return allStaff;
@@ -140,8 +149,8 @@ export default function BookingsPage() {
   };
 
   const handleOpenAddDialog = () => { 
-    if (!ownerSalonId && role === 'owner') {
-      toast({ title: "Salon ID Missing", description: "Your salon is not configured. Please set it up in 'My Salon'.", variant: "destructive" });
+    if (!ownerSalonId && (role === 'owner' || role === 'staff')) {
+      toast({ title: "Salon ID Missing", description: "Your salon is not configured or could not be determined. Please set it up in 'My Salon'.", variant: "destructive" });
       return;
     }
     if (availableServices.length === 0) {
@@ -166,7 +175,7 @@ export default function BookingsPage() {
 
   const handleSaveBooking = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!ownerSalonId && role === 'owner') {
+    if (!ownerSalonId && (role === 'owner' || role === 'staff')) {
       toast({ title: "Salon ID Missing", description: "Cannot save booking without a salon context.", variant: "destructive" });
       return;
     }
@@ -174,11 +183,12 @@ export default function BookingsPage() {
     
     const staffMember = allStaff.find(s => s.id === selectedStaffId);
     const serviceDetails = availableServices.find(s => s.id === selectedServiceId);
-    const salonName = user?.firstName ? `${user.firstName}'s Salon` : 'Your Salon'; // Placeholder, ideally fetch from salon details
+    // salonName should ideally come from a more robust source, like fetched salon details
+    const salonName = (role === 'owner' && user?.firstName) ? `${user.firstName}'s Salon` : 'The Salon'; 
 
     const bookingDataInput = { 
         salonId: ownerSalonId!, 
-        salonName: salonName, // This should be dynamically fetched or from user's salon details
+        salonName: salonName, 
         customerName, 
         customerEmail,
         service: serviceDetails?.name || 'Unknown Service', 
@@ -287,7 +297,7 @@ export default function BookingsPage() {
                   ? 'Click "Add New Booking" to schedule an appointment for a customer, or customers can book through your salon page.'
                   : "Please set up your salon in 'My Salon' to start managing bookings."}
               </p>
-              {!ownerSalonId && (
+              {!ownerSalonId && role === 'owner' && (
                 <Button asChild className="mt-4">
                   <Link href="/dashboard/my-salon">Set Up My Salon</Link>
                 </Button>
@@ -327,8 +337,8 @@ export default function BookingsPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting || !selectedServiceId || availableServices.length === 0}>
-                {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              <Button type="submit" disabled={isSubmitting || !selectedServiceId || availableServices.length === 0 || !customerName || !customerEmail || !date || !time}>
+                {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
                 {isSubmitting ? (currentBookingToEdit ? 'Saving...' : 'Adding...') : 'Save Booking'}
               </Button>
             </DialogFooter>
@@ -342,7 +352,7 @@ export default function BookingsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setBookingToDelete(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteBooking} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
               {isSubmitting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -351,4 +361,3 @@ export default function BookingsPage() {
     </div>
   );
 }
-

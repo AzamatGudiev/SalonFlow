@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, UserPlus, Edit, Trash2, Wrench, Building, Loader2, Users } from "lucide-react";
+import { ArrowLeft, UserPlus, Edit, Trash2, Building, Loader2, Users } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -36,7 +36,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 
-const OWNER_SALON_ID_KEY_PREFIX = 'owner_salon_id_';
+const OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX = 'owner_salon_id_';
 
 function generateInitials(name: string): string {
   if (!name) return '??';
@@ -70,7 +70,7 @@ export default function StaffPage() {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
 
-  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
+  const getOwnerSalonIdKey = useCallback(() => user ? `${OWNER_SALON_ID_LOCAL_STORAGE_KEY_PREFIX}${user.firebaseUid}` : null, [user]);
 
   useEffect(() => {
     if (!authIsLoading && !isLoggedIn) {
@@ -78,7 +78,7 @@ export default function StaffPage() {
       return;
     }
     if (!authIsLoading && isLoggedIn && role !== 'owner' && role !== 'staff') {
-      router.push('/dashboard');
+      router.push('/dashboard'); // Redirect non-owners/staff
       return;
     }
   }, [authIsLoading, isLoggedIn, role, router]);
@@ -95,15 +95,24 @@ export default function StaffPage() {
         const key = getOwnerSalonIdKey();
         currentOwnerSalonId = key ? localStorage.getItem(key) : null;
         setOwnerSalonId(currentOwnerSalonId);
-         if(!currentOwnerSalonId && !authIsLoading) { // only toast if auth is done loading and still no salon id
+         if(!currentOwnerSalonId && !authIsLoading) { 
             toast({ title: "Salon Not Found", description: "Please set up your salon in 'My Salon' before adding staff.", variant: "default", duration: 7000 });
         }
+      } else if (role === 'staff' && user?.firebaseUid) {
+        // For staff, try to find which salon they belong to. This is a simplification.
+        // In a real app, staff would have their salonId directly associated or fetched.
+        // For now, we can't easily determine staff's salonId from client side.
+        // This part might need refinement if staff need to manage other staff (unlikely) or view all salon staff.
+        // For now, staff can only view staff if an ownerSalonId is somehow set (e.g. if they also own another salon)
+         const key = getOwnerSalonIdKey(); // Assuming staff might also be an owner of another salon
+         currentOwnerSalonId = key ? localStorage.getItem(key) : null; // This is a limitation for pure 'staff' role
+         setOwnerSalonId(currentOwnerSalonId);
       }
       
       try {
         const [fetchedStaff, fetchedServicesResult] = await Promise.all([
           currentOwnerSalonId ? getStaffMembers({ salonId: currentOwnerSalonId }) : Promise.resolve([] as StaffMember[]),
-          getServices()
+          getServices() // Fetch all services for the checklist
         ]);
         
         setStaffList(fetchedStaff.map(staff => ({...staff, initials: generateInitials(staff.name), providedServices: staff.providedServices || [] })));
@@ -120,7 +129,7 @@ export default function StaffPage() {
       fetchInitialData();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, role, toast, authIsLoading]);
+  }, [user, role, toast, authIsLoading, getOwnerSalonIdKey]);
 
   const resetForm = () => {
     setName(''); setStaffRoleState(''); setEmail(''); setAvatarUrl(''); setSelectedServices([]);
@@ -134,7 +143,6 @@ export default function StaffPage() {
     }
      if (availableServices.length === 0) {
       toast({ title: "No Services Defined", description: "Please add services in 'Manage Services' before assigning them to staff.", variant: "default" });
-      // Optionally, still open the dialog if they want to add staff without services yet
     }
     resetForm();
     setIsAddEditDialogOpen(true);
@@ -200,7 +208,7 @@ export default function StaffPage() {
   const handleOpenDeleteDialog = (staff: StaffMember) => { setStaffToDelete(staff); };
 
   const confirmDeleteStaff = async () => {
-    if (staffToDelete && role === 'owner') {
+    if (staffToDelete && (role === 'owner' || role === 'staff')) { // Staff might delete if rules allow, but UI is owner-centric
       setIsSubmitting(true);
       const result = await deleteStaffMember(staffToDelete.id);
       if (result.success) {
@@ -238,7 +246,7 @@ export default function StaffPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Salon Staff</CardTitle>
-            <CardDescription>{role === 'owner' && ownerSalonId ? "Staff members for your salon." : "List of all staff members."}</CardDescription>
+            <CardDescription>{role === 'owner' && ownerSalonId ? "Staff members for your salon." : (role === 'staff' ? "Staff members at your salon." : "List of staff members.")}</CardDescription>
             {role === 'owner' && !ownerSalonId && !isLoadingData && (
                 <p className="text-sm text-destructive">Please set up your salon in 'My Salon' to manage staff.</p>
             )}
@@ -310,6 +318,7 @@ export default function StaffPage() {
                    <Link href="/dashboard/my-salon">Set Up My Salon</Link>
                 </Button>
               }
+              {role === 'staff' && !ownerSalonId && <p className="text-sm text-muted-foreground mt-2">Staff details for your salon will appear here.</p>}
             </div>
           )}
         </CardContent>
@@ -342,8 +351,8 @@ export default function StaffPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              <Button type="submit" disabled={isSubmitting || !name || !staffRole || !email}>
+                {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
                 {isSubmitting ? (currentStaffToEdit ? 'Saving...' : 'Adding...') : 'Save Staff Member'}
               </Button>
             </DialogFooter>
@@ -357,7 +366,7 @@ export default function StaffPage() {
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setStaffToDelete(null)} disabled={isSubmitting}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteStaff} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
+              {isSubmitting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
               {isSubmitting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -366,4 +375,3 @@ export default function StaffPage() {
     </div>
   );
 }
-
