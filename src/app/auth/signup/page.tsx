@@ -83,11 +83,13 @@ export default function SignupPage() {
       console.error("Firebase signup error:", error);
       let errorMessage = "An unknown error occurred during signup.";
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "This email address is already in use. Please try another.";
+        errorMessage = "This email address is already in use. Please try another or log in.";
       } else if (error.code === 'auth/weak-password') {
         errorMessage = "The password is too weak. Please choose a stronger password.";
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = "The email address is not valid.";
+      } else if (error.code === 'auth/configuration-not-found') {
+        errorMessage = "Firebase authentication is not configured correctly. Please contact support.";
       }
       toast({
         title: "Signup Failed",
