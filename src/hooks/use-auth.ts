@@ -18,7 +18,7 @@ export interface AuthenticatedUser extends UserProfile {
 export function useAuth() {
   const [authUser, setAuthUser] = useState<AuthenticatedUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [rawAuthLoaded, setRawAuthLoaded] = useState(false); // To track if Firebase Auth itself has initialized
+  const [rawAuthLoaded, setRawAuthLoaded] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -26,66 +26,79 @@ export function useAuth() {
       if (typeof window !== 'undefined') {
           console.error("useAuth: Firebase auth instance from '@/lib/firebase' is not available. Check Firebase initialization and environment variables.");
       }
-      setRawAuthLoaded(true); // Mark as loaded even if instance is not there, to stop loading UI
+      setRawAuthLoaded(true); 
       setIsLoading(false);
       return;
     } else {
       if (typeof window !== 'undefined' && !rawAuthLoaded) {
-        // console.log("useAuth: Firebase auth instance is available. Setting up onAuthStateChanged listener.");
+        console.log("useAuth: Firebase auth instance is available. Setting up onAuthStateChanged listener.");
       }
     }
 
     const unsubscribe = onAuthStateChanged(firebaseAuthInstance, async (firebaseUser: FirebaseUser | null) => {
       if (typeof window !== 'undefined' && !rawAuthLoaded) {
-        // console.log("useAuth: onAuthStateChanged listener fired.");
+        console.log("useAuth: onAuthStateChanged listener fired for the first time.");
         setRawAuthLoaded(true);
       }
 
       if (firebaseUser) {
-        // console.log("useAuth: Firebase user authenticated (firebaseUser available). UID:", firebaseUser.uid);
-        // Attempt to fetch user profile from Firestore
+        console.log("useAuth: Firebase user authenticated (firebaseUser available). UID:", firebaseUser.uid);
         const profileResult = await getUserProfile(firebaseUser.uid);
-        // console.log("useAuth: profileResult from getUserProfile:", JSON.stringify(profileResult));
+        console.log("useAuth: profileResult from getUserProfile:", JSON.stringify(profileResult));
         
         if (profileResult.success && profileResult.profile) {
-          // console.log("useAuth: Profile fetched successfully. Setting authUser.");
+          console.log("useAuth: Profile fetched successfully. Setting authUser.");
           setAuthUser({ 
             ...profileResult.profile, 
             firebaseUid: firebaseUser.uid 
           });
         } else {
-          console.warn(`useAuth: User profile not found or failed to fetch for UID: ${firebaseUser.uid}. Error: ${profileResult.error}. User remains authenticated with Firebase Auth, but local app profile is missing or inaccessible.`);
-          setAuthUser(null); // Keep user authenticated with Firebase Auth, but app profile is not available.
+          // This case means the user exists in Firebase Auth, but their profile document
+          // in Firestore is missing OR there was an error fetching it (e.g., permissions).
+          // This can happen briefly during signup if Firestore write is slower than this check.
+          // Or it can indicate a more persistent issue (e.g., profile creation failed, or rules deny read).
+          console.warn(
+            `useAuth: User profile not found or failed to fetch for UID: ${firebaseUser.uid}. Error: ${profileResult.error}. ` +
+            "The user is authenticated with Firebase Auth, but their Firestore profile is missing or inaccessible. " +
+            "This might be a temporary state during signup, or a data issue for existing users."
+          );
+          setAuthUser(null); // Don't immediately sign out, let other processes (like profile creation) attempt to complete.
+                            // UI should handle this state (e.g. show loading, or a message if it persists).
         }
       } else {
-        // console.log("useAuth: No Firebase user (logged out or not yet logged in). Setting authUser to null.");
+        console.log("useAuth: No Firebase user (logged out or not yet logged in). Setting authUser to null.");
         setAuthUser(null);
       }
-      // console.log("useAuth: Setting isLoading to false.");
+      console.log("useAuth: Setting isLoading to false.");
       setIsLoading(false);
     });
 
     return () => {
-      // console.log("useAuth: Unsubscribing from onAuthStateChanged.");
+      console.log("useAuth: Unsubscribing from onAuthStateChanged.");
       unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Added rawAuthLoaded to dependency array if it were used, but firebaseAuthInstance is stable
+  }, []); 
 
   const logout = useCallback(async () => {
-    // console.log("useAuth: logout called.");
+    console.log("useAuth: logout called.");
     setIsLoading(true);
     if (firebaseAuthInstance) {
       try {
         await firebaseSignOut(firebaseAuthInstance);
         // onAuthStateChanged will set authUser to null and isLoading to false
-        // console.log("useAuth: Firebase sign out successful. Router will push to /auth/login.");
-        router.push('/auth/login'); 
+        console.log("useAuth: Firebase sign out successful. Router will push to /auth/login.");
+        // router.push('/auth/login'); // onAuthStateChanged should handle redirects based on authUser state
       } catch (error) {
         console.error("useAuth: Error signing out from Firebase: ", error);
-        setAuthUser(null); // Ensure local state is cleared
+        setAuthUser(null); 
         setIsLoading(false);
-        router.push('/auth/login'); // Attempt redirect even on error
+        // router.push('/auth/login'); 
+      } finally {
+        // Ensure authUser is null and redirect happens after state update
+        setAuthUser(null);
+        setIsLoading(false);
+        router.push('/auth/login');
       }
     } else {
         console.warn("useAuth: logout called but firebaseAuthInstance is not available.");
@@ -99,8 +112,8 @@ export function useAuth() {
     user: authUser,
     role: authUser?.role || null, 
     isLoggedIn: !!authUser, 
-    isLoading: isLoading || !rawAuthLoaded, //isLoading is true until rawAuthLoaded and onAuthStateChanged has fired at least once
+    isLoading: isLoading || !rawAuthLoaded,
     logout,
-    rawAuthLoaded // Expose this if needed by other parts of the app
+    rawAuthLoaded
   };
 }

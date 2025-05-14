@@ -1,7 +1,7 @@
 
 'use server';
 
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase'; // Ensure auth is imported
 import { UserProfileSchema, type UserProfile } from '@/lib/schemas';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'; 
 
@@ -13,6 +13,13 @@ const USERS_COLLECTION = 'users';
  */
 export async function setUserProfile(userData: UserProfile): Promise<{ success: boolean; error?: string }> {
   console.log("setUserProfile ACTION: Received userData:", JSON.stringify(userData)); // Log received data
+
+  // Log current auth state on the server when this action is called
+  if (auth) {
+    console.log("setUserProfile ACTION: auth.currentUser on server:", auth.currentUser ? auth.currentUser.uid : 'null');
+  } else {
+    console.log("setUserProfile ACTION: auth object from firebase.ts is null/undefined on server.");
+  }
 
   if (!db) {
     const errorMsg = "Firestore database is not initialized (setUserProfile).";
@@ -30,17 +37,16 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
   try {
     const userDocRef = doc(db, USERS_COLLECTION, userData.uid);
     
-    // Omit uid from the data to be set in the document, as it's the document ID.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { uid, ...profileDataForDoc } = validationResult.data;
 
     const dataToSet = {
       ...profileDataForDoc,
-      createdAt: serverTimestamp(), // Use server timestamp
-      updatedAt: serverTimestamp(), // Use server timestamp
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
-    await setDoc(userDocRef, dataToSet, { merge: true }); // merge: true is good for updates, also works for create
+    await setDoc(userDocRef, dataToSet, { merge: true });
     console.log(`setUserProfile ACTION: Profile successfully set for UID: ${userData.uid}`);
     return { success: true };
   } catch (error: any) {
@@ -54,6 +60,11 @@ export async function setUserProfile(userData: UserProfile): Promise<{ success: 
  */
 export async function getUserProfile(uid: string): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
   console.log("getUserProfile ACTION: Attempting to fetch profile for UID:", uid);
+  if (auth) {
+    console.log("getUserProfile ACTION: auth.currentUser on server:", auth.currentUser ? auth.currentUser.uid : 'null');
+  } else {
+    console.log("getUserProfile ACTION: auth object from firebase.ts is null/undefined on server.");
+  }
   if (!db) {
     const errorMsg = "Firestore database is not initialized (getUserProfile).";
     console.error("getUserProfile ACTION:", errorMsg);
@@ -71,11 +82,10 @@ export async function getUserProfile(uid: string): Promise<{ success: boolean; p
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      // Firestore timestamps are converted to JS Date objects on read if they are actual Timestamps.
-      // UserProfileSchema doesn't include createdAt/updatedAt, so we spread them out if they exist.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { createdAt, updatedAt, ...profileData } = data;
       
-      const validationResult = UserProfileSchema.safeParse({ ...profileData, uid: docSnap.id }); // Add uid back for schema validation
+      const validationResult = UserProfileSchema.safeParse({ ...profileData, uid: docSnap.id });
       
       if (validationResult.success) {
         console.log("getUserProfile ACTION: Profile successfully fetched for UID:", uid);
