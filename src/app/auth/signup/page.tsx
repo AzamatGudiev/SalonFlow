@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, type FormEvent } from 'react'; // Added useEffect
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,10 +16,12 @@ import type { UserRole, UserProfile } from '@/lib/schemas';
 import { auth } from '@/lib/firebase'; 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { setUserProfile } from '@/app/actions/userActions';
+import { useAuth } from '@/hooks/use-auth'; // Added useAuth
 
 export default function SignupPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isLoggedIn, isLoading: authIsLoading } = useAuth(); // Added user, isLoggedIn, authIsLoading
   
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -28,8 +30,17 @@ export default function SignupPage() {
   const [role, setRole] = useState<UserRole>('customer');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (!authIsLoading && isLoggedIn && user) {
+      console.log("SignupPage: User is logged in, redirecting to /dashboard. User:", user);
+      router.push('/dashboard');
+    }
+  }, [authIsLoading, isLoggedIn, user, router]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    console.log(`SignupPage: Attempting to create user with email: ${email}, role: ${role}`);
+    
     if (!firstName || !lastName || !email || !password || !role) {
       toast({
         title: "Error",
@@ -44,19 +55,14 @@ export default function SignupPage() {
     }
 
     setIsSubmitting(true);
-    console.log(`SignupPage: Attempting to create user with email: ${email}, role: ${role}`);
 
     try {
-      // Step 1: Create user in Firebase Authentication
       console.log("SignupPage: Calling createUserWithEmailAndPassword...");
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // If the above line throws an error, code execution will jump to the catch block.
-      // So, if we reach here, createUserWithEmailAndPassword SUCCEEDED.
       console.log("SignupPage: createUserWithEmailAndPassword SUCCEEDED. UserCredential:", userCredential);
       
       const firebaseUser = userCredential.user;
       if (!firebaseUser || !firebaseUser.uid) {
-        // This case should be rare if createUserWithEmailAndPassword succeeded without error.
         console.error("SignupPage: Firebase user or UID is null/undefined after successful auth creation.");
         toast({
           title: "Signup Failed",
@@ -64,11 +70,10 @@ export default function SignupPage() {
           variant: "destructive",
         });
         setIsSubmitting(false);
-        return; // Explicitly return here
+        return;
       }
       console.log(`SignupPage: Firebase user created successfully. UID: ${firebaseUser.uid}`);
 
-      // Step 2: Create user profile in Firestore
       const profileData: UserProfile = {
         uid: firebaseUser.uid,
         firstName,
@@ -88,19 +93,16 @@ export default function SignupPage() {
           variant: "destructive",
           duration: 9000, 
         });
-        // NOTE: User auth account exists, but Firestore profile creation failed.
-        // Depending on desired UX, you might want to try deleting the auth user here
-        // or guiding the user to contact support.
       } else {
         toast({
           title: "Account Created!",
           description: "You've been successfully signed up! Redirecting to dashboard...",
         });
-        // router.push('/dashboard'); // Firebase onAuthStateChanged in useAuth will handle setting user state and redirect
+        // The useEffect above will handle redirect once useAuth updates isLoggedIn state
       }
 
     } catch (error: any) {
-      console.error("SignupPage: Firebase signup error in catch block:", error);
+      console.error("Firebase signup error:", error); // Generic error log
       let errorMessage = "An unknown error occurred during signup.";
       if (error.code) {
         switch (error.code) {
@@ -132,6 +134,14 @@ export default function SignupPage() {
       setIsSubmitting(false);
     }
   };
+  
+  if (authIsLoading) {
+    return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  }
+  // If already logged in and not loading, the useEffect will redirect.
+  if (isLoggedIn && user) {
+     return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  }
 
   return (
     <Card className="w-full max-w-lg shadow-xl">
@@ -242,5 +252,3 @@ export default function SignupPage() {
     </Card>
   );
 }
-
-    

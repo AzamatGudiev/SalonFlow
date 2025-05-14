@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -8,13 +9,10 @@ service cloud.firestore {
       // matches the 'uid' field being written into the document.
       allow create: if request.resource.data.uid == userId;
 
-      // TEMPORARY DEBUGGING for READ from server action:
-      // Allow ANYONE to read ANY user document.
-      // THIS IS HIGHLY INSECURE. REVERT TO A SECURE RULE AFTER TESTING.
-      // Secure rule: allow read: if request.auth != null && request.auth.uid == userId;
-      allow read: if true; // EXTREMELY PERMISSIVE FOR DEBUGGING
-
-      // Update rule remains strict.
+      // Users can read their own profiles.
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Users can update their own profiles.
       allow update: if request.auth != null && request.auth.uid == userId;
       allow delete: if false;
     }
@@ -34,7 +32,7 @@ service cloud.firestore {
                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
     }
 
-    // Services (Global specific services):
+    // Services
     match /services/{serviceId} {
       allow read: if true;
       allow create, update, delete: if request.auth != null &&
@@ -42,22 +40,15 @@ service cloud.firestore {
                                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff');
     }
 
-    // Staff:
-    // - Anyone can read staff details.
-    // - Only an authenticated 'owner' can create staff for a salon they own.
-    // - Only an authenticated 'owner' can update/delete staff from a salon they own. salonId is immutable for existing staff.
+    // Staff
     match /staff/{staffId} {
       allow read: if true;
-
       function isUserSalonOwner(userId_func, salonId_func) {
-        // Check if user document exists and role is owner
-        // Check if salon document exists and ownerUid matches userId
         return exists(/databases/$(database)/documents/users/$(userId_func)) &&
                get(/databases/$(database)/documents/users/$(userId_func)).data.role == 'owner' &&
                exists(/databases/$(database)/documents/salons/$(salonId_func)) &&
                get(/databases/$(database)/documents/salons/$(salonId_func)).data.ownerUid == userId_func;
       }
-
       allow create: if request.auth != null &&
                        isUserSalonOwner(request.auth.uid, request.resource.data.salonId);
       allow update: if request.auth != null &&
@@ -67,19 +58,14 @@ service cloud.firestore {
                        isUserSalonOwner(request.auth.uid, resource.data.salonId);
     }
 
-    // Bookings:
-    // - Authenticated users can create bookings for themselves.
-    // - Customers can read/update/delete their own bookings.
-    // - Owners/Staff of the booked salon can read/update/delete bookings for that salon.
+    // Bookings
     match /bookings/{bookingId} {
       allow create: if request.auth != null &&
                        request.resource.data.customerEmail == request.auth.token.email;
-
       function isBookingCustomer() {
         // Assumes request.auth != null is checked by the calling rule
         return request.auth.token.email == resource.data.customerEmail;
       }
-
       function isOwnerOfBookedSalon() {
         // Assumes request.auth != null is checked by the calling rule
         return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
@@ -87,7 +73,6 @@ service cloud.firestore {
                exists(/databases/$(database)/documents/salons/$(resource.data.salonId)) &&
                get(/databases/$(database)/documents/salons/$(resource.data.salonId)).data.ownerUid == request.auth.uid;
       }
-
       function isStaffOfBookedSalon() {
         // Assumes request.auth != null is checked by the calling rule
         // Assumes staff document ID is their auth UID and they have a user profile with role 'staff'
@@ -96,7 +81,6 @@ service cloud.firestore {
                exists(/databases/$(database)/documents/staff/$(request.auth.uid)) && // Check if staff doc exists
                get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.salonId == resource.data.salonId;
       }
-
       allow read, update, delete: if request.auth != null &&
                                      (isBookingCustomer() ||
                                       isOwnerOfBookedSalon() ||

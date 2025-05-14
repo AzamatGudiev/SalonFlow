@@ -9,22 +9,29 @@ import { Separator } from "@/components/ui/separator";
 import { Chrome, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from '@/hooks/use-auth';
-import { useState } from "react";
+import { useState, useEffect, type FormEvent } from "react"; // Added useEffect
 import { useToast } from "@/hooks/use-toast";
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth'; // Added sendPasswordResetEmail
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const { isLoading: authIsLoading } = useAuth();
+  const { user, isLoggedIn, isLoading: authIsLoading } = useAuth(); // Added user, isLoggedIn
   const { toast } = useToast();
   const router = useRouter();
-  const [email, setEmail] = useState(''); // Default empty for real usage
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingReset, setIsSendingReset] = useState(false);
 
-  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (!authIsLoading && isLoggedIn && user) {
+      console.log("LoginPage: User is logged in, redirecting to /dashboard. User:", user);
+      router.push('/dashboard');
+    }
+  }, [authIsLoading, isLoggedIn, user, router]);
+
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!auth) {
       toast({ title: "Error", description: "Authentication service is not available. Please try again later.", variant: "destructive" });
@@ -42,15 +49,15 @@ export default function LoginPage() {
         title: "Login Successful!",
         description: "Redirecting to your dashboard...",
       });
-      // onAuthStateChanged in useAuth will handle redirect
-    } catch (error: any) { // Added missing opening brace
+      // The useEffect above will handle redirect once useAuth updates isLoggedIn state
+    } catch (error: any) {
       console.error("Firebase login error:", error);
       let errorMessage = "An unknown error occurred during login.";
       if (error.code) {
         switch (error.code) {
           case 'auth/user-not-found':
           case 'auth/wrong-password':
-          case 'auth/invalid-credential': // More generic for invalid email/password combo
+          case 'auth/invalid-credential':
             errorMessage = "Invalid email or password. Please try again.";
             break;
           case 'auth/invalid-email':
@@ -98,7 +105,6 @@ export default function LoginPage() {
       if (error.code === 'auth/invalid-email') {
         errorMessage = "The email address is not valid.";
       } else if (error.code === 'auth/user-not-found') {
-        // Firebase doesn't explicitly tell if user not found for security, but for UX we can be generic
          errorMessage = "If an account exists for this email, a password reset link has been sent.";
       }
       toast({
@@ -110,6 +116,16 @@ export default function LoginPage() {
       setIsSendingReset(false);
     }
   };
+
+  if (authIsLoading) {
+    return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  }
+  // If already logged in and not loading, the useEffect will redirect, so no need to render the form.
+  // This prevents a flash of the login form if the user is already authenticated.
+  if (isLoggedIn && user) {
+     return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>; // Or a loading message
+  }
+
 
   return (
     <Card className="w-full max-w-md shadow-xl">
