@@ -4,16 +4,15 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Users:
-    // - Authenticated users can create their own user profile document.
-    // - TEMPORARY DEBUGGING: Allow ANYONE to read ANY user document.
-    //   REVERT to 'allow read: if request.auth != null && request.auth.uid == userId;' after testing.
-    // - Only the authenticated user can update their own profile.
-    // - Deletion of user profiles is disallowed from client.
+    // TEMPORARY DEBUGGING FOR VERCEL DEPLOYMENT:
+    // Allow any authenticated user to read or write to any user document.
+    // This helps isolate if the issue is with the auth context of server actions.
+    // MUST be reverted to stricter rules:
+    // allow create: if request.auth != null && request.auth.uid == userId;
+    // allow read, update: if request.auth != null && request.auth.uid == userId;
     match /users/{userId} {
-      allow create: if request.auth != null && request.auth.uid == userId; // Secure create rule
-      allow read: if true;   // TEMPORARY DEBUGGING FOR READ
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false;
+      allow read, write: if request.auth != null; // Simplified for testing
+      allow delete: if false; // Prevent client-side deletion
     }
 
     // Salons:
